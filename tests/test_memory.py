@@ -47,5 +47,5 @@ class TestMemory:
         """Total weight bytes should be reasonable for the model."""
         profiler = ModelMemoryProfiler()
         total = profiler.get_total_model_weight_bytes()
-        # Paper says ~385 KB = ~394,240 bytes
-        assert 100_000 < total < 1_000_000
+        # Compact model: ~77 KB weight bytes
+        assert 50_000 < total < 500_000

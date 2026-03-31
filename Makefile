@@ -4,7 +4,7 @@ PIP := $(VENV)/bin/pip
 PYTHON := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help install test dry-run preprocess-data train validate test-model \
+.PHONY: help install test dry-run preprocess-data train train-resume validate test-model \
         export-partitions profile-memory run-cloud run-edge smoke-test \
         docker-build docker-up docker-down docker-logs clean
 
@@ -42,14 +42,17 @@ preprocess-data: ## Preprocess raw dataset → processed numpy arrays
 
 # ── Training ───────────────────────────────────────────
 
-train: ## Train the model (requires preprocessed data)
-	$(PYTHON) scripts/train.py --config configs/training.yaml
+train: ## Train the model from scratch (requires preprocessed data)
+	$(PYTHON) -m unisplit.training.cli train --config configs/default.yaml
+
+train-resume: ## Resume training from latest checkpoint
+	$(PYTHON) -m unisplit.training.cli train --config configs/default.yaml --resume checkpoints/latest.pt
 
 validate: ## Validate model on val set
-	$(PYTHON) -m unisplit.training.cli validate --config configs/training.yaml
+	$(PYTHON) -m unisplit.training.cli validate --config configs/default.yaml
 
 test-model: ## Test model on test set
-	$(PYTHON) -m unisplit.training.cli test --config configs/training.yaml
+	$(PYTHON) -m unisplit.training.cli test --config configs/default.yaml
 
 # ── Model Export ───────────────────────────────────────
 

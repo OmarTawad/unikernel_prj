@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
-"""Preprocessing entry point for CIC-IoT2023 dataset."""
+"""Preprocessing entry point for CIC-IoT2023 dataset.
+
+Usage:
+    # Full preprocessing
+    python scripts/preprocess_dataset.py --config configs/dataset.yaml
+
+    # Testing with limited rows per CSV
+    python scripts/preprocess_dataset.py --config configs/dataset.yaml --max-rows 1000
+
+    # Validate existing processed data
+    python scripts/preprocess_dataset.py --validate-only
+"""
 
 import argparse
-import logging
 import sys
 
 from unisplit.shared.config import load_config
@@ -15,6 +25,8 @@ def main():
     parser.add_argument("--config", default="configs/dataset.yaml", help="Dataset config")
     parser.add_argument("--max-rows", type=int, default=None,
                        help="Max rows per CSV (for testing)")
+    parser.add_argument("--chunk-size", type=int, default=50_000,
+                       help="Rows per streaming chunk (default: 50000)")
     parser.add_argument("--validate-only", action="store_true",
                        help="Only validate existing processed data")
     args = parser.parse_args()
@@ -46,6 +58,7 @@ def main():
         train_ratio=dc.train_ratio,
         val_ratio=dc.val_ratio,
         test_ratio=dc.test_ratio,
+        chunk_size=args.chunk_size,
         max_rows_per_file=args.max_rows,
     )
 

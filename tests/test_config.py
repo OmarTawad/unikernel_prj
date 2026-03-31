@@ -39,7 +39,7 @@ class TestConfig:
 
     def test_training_defaults(self):
         config = UniSplitConfig()
-        assert config.training.batch_size == 256
+        assert config.training.batch_size == 4096
         assert config.training.epochs == 50
         assert config.training.learning_rate == 0.001
 

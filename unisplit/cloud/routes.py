@@ -16,7 +16,6 @@ import time
 import numpy as np
 from fastapi import APIRouter, HTTPException, Request
 
-from unisplit.cloud.app import get_state
 from unisplit.model.registry import SPLIT_REGISTRY
 from unisplit.shared.constants import CLASS_NAMES, DEFAULT_MODEL_VERSION
 from unisplit.shared.schemas import (
@@ -33,6 +32,12 @@ from unisplit.shared.schemas import (
 from unisplit.shared.serialization import decode_payload
 
 router = APIRouter()
+
+
+def get_state() -> dict:
+    """Deferred import to avoid circular dependency with app.py."""
+    from unisplit.cloud.app import _state
+    return _state
 
 
 @router.get("/health", response_model=HealthResponse)

@@ -34,7 +34,7 @@ class ModelConfig(BaseModel):
 
 class TrainingConfig(BaseModel):
     """Training hyperparameters."""
-    batch_size: int = 256
+    batch_size: int = 4096
     epochs: int = 50
     learning_rate: float = 0.001
     weight_decay: float = 0.0001
@@ -43,10 +43,11 @@ class TrainingConfig(BaseModel):
     use_class_weights: bool = True
     scheduler_patience: int = 5
     scheduler_factor: float = 0.5
-    num_workers: int = 4
+    num_workers: int = 6
     checkpoint_dir: str = "checkpoints"
     metrics_log: str = "checkpoints/metrics.jsonl"
-    save_every_n_epochs: int = 5
+    save_every_n_epochs: int = 10
+    log_every_n_steps: int = 200
 
 
 class DatasetConfig(BaseModel):

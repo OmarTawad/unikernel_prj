@@ -8,7 +8,7 @@ model:
   supported_split_ids: [0, 3, 6, 7, 8, 9]
 
 training:
-  batch_size: 256
+  batch_size: 4096
   epochs: 50
   learning_rate: 0.001
   weight_decay: 0.0001
@@ -17,7 +17,11 @@ training:
   use_class_weights: true
   scheduler_patience: 5
   scheduler_factor: 0.5
-  num_workers: 4
+  num_workers: 6
+  checkpoint_dir: "checkpoints"
+  metrics_log: "checkpoints/metrics.jsonl"
+  save_every_n_epochs: 10
+  log_every_n_steps: 200
 
 dataset:
   raw_dir: "data/raw"

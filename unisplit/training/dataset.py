@@ -1,7 +1,7 @@
 """PyTorch Dataset for CIC-IoT2023 preprocessed data.
 
-Loads preprocessed numpy arrays and applies feature normalization
-using precomputed statistics.
+Uses numpy memmap for zero-copy disk reads.
+All feature normalization is applied on-the-fly using precomputed statistics.
 """
 
 from __future__ import annotations
@@ -19,9 +19,13 @@ from unisplit.shared.constants import NUM_CLASSES, NUM_FEATURES
 class CICIoT2023Dataset(Dataset):
     """PyTorch Dataset for preprocessed CIC-IoT2023 data.
 
+    Uses memory-mapped numpy files for efficient disk access.
+    Normalization is applied per-sample on read using precomputed
+    training-set statistics.
+
     Expects:
-        - processed_dir/features.npy  — shape (N, 80) float32
-        - processed_dir/labels.npy    — shape (N,) int64
+        - processed_dir/features.npy  — shape (N, 80) float32 (memmap-safe)
+        - processed_dir/labels.npy    — shape (N,) int64 (memmap-safe)
         - metadata_dir/norm_stats.json — normalization statistics
         - split_file — .npy file with integer indices for this split
     """
@@ -33,20 +37,11 @@ class CICIoT2023Dataset(Dataset):
         split_file: str | Path | None = None,
         normalize: bool = True,
     ):
-        """Initialize dataset.
-
-        Args:
-            processed_dir: Directory containing features.npy and labels.npy.
-            metadata_dir: Directory containing norm_stats.json.
-            split_file: Path to .npy index file (train/val/test indices).
-                        If None, use all samples.
-            normalize: Whether to apply feature normalization.
-        """
         self.processed_dir = Path(processed_dir)
         self.metadata_dir = Path(metadata_dir)
         self.normalize = normalize
 
-        # Load data
+        # Load data as memory-mapped files — no RAM spike
         features_path = self.processed_dir / "features.npy"
         labels_path = self.processed_dir / "labels.npy"
 
@@ -82,10 +77,13 @@ class CICIoT2023Dataset(Dataset):
                 with open(stats_path) as f:
                     stats = json.load(f)
                 self.norm_min = np.array(stats["min"], dtype=np.float32)
-                self.norm_max = np.array(stats["max"], dtype=np.float32)
-                self.norm_range = self.norm_max - self.norm_min
-                # Avoid division by zero
-                self.norm_range[self.norm_range < 1e-10] = 1.0
+                # Use precomputed range if available, else compute
+                if "range" in stats:
+                    self.norm_range = np.array(stats["range"], dtype=np.float32)
+                else:
+                    norm_max = np.array(stats["max"], dtype=np.float32)
+                    self.norm_range = norm_max - self.norm_min
+                    self.norm_range[self.norm_range < 1e-10] = 1.0
 
     def __len__(self) -> int:
         return len(self.indices)
@@ -102,18 +100,33 @@ class CICIoT2023Dataset(Dataset):
 
         return torch.from_numpy(features), torch.tensor(label, dtype=torch.long)
 
-    def get_class_weights(self) -> torch.Tensor:
+    def get_class_weights(self, batch_size: int = 500_000) -> torch.Tensor:
         """Compute inverse-frequency class weights for imbalanced data.
+
+        Reads labels in batches to avoid materializing the full label array
+        for the split in RAM.
 
         Returns:
             Tensor of shape (num_classes,) with per-class weights.
         """
-        labels_subset = self.labels[self.indices]
-        counts = np.bincount(labels_subset, minlength=NUM_CLASSES).astype(np.float64)
+        counts = np.zeros(NUM_CLASSES, dtype=np.int64)
+        n = len(self.indices)
+
+        # Process indices in batches
+        for start in range(0, n, batch_size):
+            end = min(start + batch_size, n)
+            idx_batch = self.indices[start:end]
+            labels_batch = self.labels[idx_batch]
+            for lbl in labels_batch:
+                if 0 <= lbl < NUM_CLASSES:
+                    counts[lbl] += 1
+
         # Avoid division by zero for absent classes
-        counts[counts == 0] = 1.0
-        weights = 1.0 / counts
-        weights = weights / weights.sum() * NUM_CLASSES  # Normalize so mean = 1.0
+        counts_float = counts.astype(np.float64)
+        counts_float[counts_float == 0] = 1.0
+
+        weights = 1.0 / counts_float
+        weights = weights / weights.sum() * NUM_CLASSES  # Normalize so mean ≈ 1.0
         return torch.tensor(weights, dtype=torch.float32)
 
 

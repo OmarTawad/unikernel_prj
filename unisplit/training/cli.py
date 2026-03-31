@@ -1,7 +1,7 @@
 """Training CLI entry points.
 
 Commands:
-    train     — Full training run
+    train     — Full training run (supports --resume)
     validate  — Evaluate on validation set
     test      — Evaluate on test set
     dry-run   — Validate architecture with synthetic data
@@ -22,8 +22,7 @@ from unisplit.shared.logging import setup_logging
 
 
 def cmd_train(args: argparse.Namespace) -> None:
-    """Run full training."""
-    from unisplit.training.checkpoint import load_checkpoint
+    """Run full training with proper resume support."""
     from unisplit.training.dataloader import create_dataloader
     from unisplit.training.dataset import CICIoT2023Dataset
     from unisplit.training.trainer import Trainer, seed_everything
@@ -74,12 +73,14 @@ def cmd_train(args: argparse.Namespace) -> None:
         scheduler_patience=tc.scheduler_patience,
         scheduler_factor=tc.scheduler_factor,
         save_every_n_epochs=tc.save_every_n_epochs,
+        log_every_n_steps=tc.log_every_n_steps,
         class_names=CLASS_NAMES,
+        config=config,
     )
 
     # Resume from checkpoint if specified
     if args.resume:
-        load_checkpoint(args.resume, model, trainer.optimizer, tc.device)
+        trainer.resume_from(args.resume)
 
     result = trainer.train(tc.epochs)
     print(f"\n✓ Training complete. Best F1: {result['best_val_f1']:.4f} at epoch {result['best_epoch']}")
@@ -176,7 +177,8 @@ def main() -> None:
     # train
     p_train = subparsers.add_parser("train", help="Train the model")
     p_train.add_argument("--config", default="configs/default.yaml")
-    p_train.add_argument("--resume", default=None, help="Resume from checkpoint")
+    p_train.add_argument("--resume", default=None,
+                        help="Resume from checkpoint (e.g., checkpoints/latest.pt)")
 
     # validate
     p_val = subparsers.add_parser("validate", help="Validate on val set")
