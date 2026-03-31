@@ -1,0 +1,20 @@
+# Memory budget configuration
+# Used by the feasibility pipeline to compute K(B)
+memory_budget:
+  budget_bytes: 25165824    # 24 MB - primary budget (paper default)
+  overhead_bytes: 2097152   # 2 MB - OS/runtime overhead δ
+
+# Additional budget scenarios for experiments
+budgets:
+  tight_8mb:
+    budget_bytes: 8388608     # 8 MB
+    overhead_bytes: 2097152
+  tight_12mb:
+    budget_bytes: 12582912    # 12 MB
+    overhead_bytes: 2097152
+  medium_16mb:
+    budget_bytes: 16777216    # 16 MB
+    overhead_bytes: 2097152
+  default_24mb:
+    budget_bytes: 25165824    # 24 MB
+    overhead_bytes: 2097152

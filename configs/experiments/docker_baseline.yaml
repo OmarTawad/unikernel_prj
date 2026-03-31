@@ -1,0 +1,18 @@
+# Experiment: Docker baseline comparison
+experiment:
+  name: "docker_baseline"
+  description: "Docker baseline: equivalent to Neurosurgeon static split"
+  policy: "fixed"
+  policy_args:
+    split_id: 7
+  num_samples: -1
+  output_dir: "experiments/results/docker_baseline"
+  # This experiment is designed to compare Docker vs future Unikraft performance
+  runtime_label: "docker"
+
+edge:
+  default_policy: "fixed"
+
+memory_budget:
+  budget_bytes: 25165824
+  overhead_bytes: 2097152

@@ -1,0 +1,14 @@
+# Experiment: Local-only (no cloud, full model on edge)
+experiment:
+  name: "local_only"
+  description: "Local-only: full model on edge, no cloud offloading"
+  policy: "local_only"
+  num_samples: -1
+  output_dir: "experiments/results/local_only"
+
+edge:
+  default_policy: "local_only"
+
+memory_budget:
+  budget_bytes: 25165824
+  overhead_bytes: 2097152

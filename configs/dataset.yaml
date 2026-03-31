@@ -1,0 +1,135 @@
+# Dataset configuration
+dataset:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  metadata_dir: "data/metadata"
+  splits_dir: "data/splits"
+  num_features: 80
+  num_classes: 34
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+  normalize: true
+
+  # 80 statistical features from CIC-IoT2023
+  # These are the flow-level features used in the paper
+  feature_columns:
+    - flow_duration
+    - Header_Length
+    - Protocol Type
+    - Duration
+    - Rate
+    - Srate
+    - Drate
+    - fin_flag_number
+    - syn_flag_number
+    - rst_flag_number
+    - psh_flag_number
+    - ack_flag_number
+    - ece_flag_number
+    - cwr_flag_number
+    - ack_count
+    - syn_count
+    - fin_count
+    - urg_count
+    - rst_count
+    - HTTP
+    - HTTPS
+    - DNS
+    - Telnet
+    - SMTP
+    - SSH
+    - IRC
+    - TCP
+    - UDP
+    - DHCP
+    - ARP
+    - ICMP
+    - IPv
+    - LLC
+    - Tot sum
+    - Min
+    - Max
+    - AVG
+    - Std
+    - Tot size
+    - IAT
+    - Number
+    - Magnitue
+    - Radius
+    - Covariance
+    - Variance
+    - Weight
+    # Additional statistical features to reach 80
+    - flow_bytes_s
+    - flow_packets_s
+    - fwd_packets_s
+    - bwd_packets_s
+    - fwd_header_length
+    - bwd_header_length
+    - fwd_packets_length_mean
+    - bwd_packets_length_mean
+    - fwd_packets_length_std
+    - bwd_packets_length_std
+    - fwd_packets_length_max
+    - bwd_packets_length_max
+    - fwd_packets_length_min
+    - bwd_packets_length_min
+    - fwd_iat_mean
+    - bwd_iat_mean
+    - fwd_iat_std
+    - bwd_iat_std
+    - fwd_iat_max
+    - bwd_iat_max
+    - fwd_iat_min
+    - bwd_iat_min
+    - fwd_psh_flags
+    - bwd_psh_flags
+    - fwd_urg_flags
+    - bwd_urg_flags
+    - fwd_rst_flags
+    - bwd_rst_flags
+    - fwd_bulk_rate
+    - bwd_bulk_rate
+    - fwd_subflow_bytes
+    - bwd_subflow_bytes
+    - active_mean
+    - idle_mean
+
+  # 34 class labels (33 attacks + benign)
+  label_column: "label"
+  class_names:
+    - Benign
+    - DDoS-RSTFINFlood
+    - DDoS-PSHACK_Flood
+    - DDoS-SYN_Flood
+    - DDoS-UDP_Flood
+    - DDoS-TCP_Flood
+    - DDoS-ICMP_Flood
+    - DDoS-SynonymousIP_Flood
+    - DDoS-ACK_Fragmentation
+    - DDoS-UDP_Fragmentation
+    - DDoS-ICMP_Fragmentation
+    - DDoS-SlowLoris
+    - DDoS-HTTP_Flood
+    - DoS-UDP_Flood
+    - DoS-SYN_Flood
+    - DoS-TCP_Flood
+    - DoS-HTTP_Flood
+    - Recon-PingSweep
+    - Recon-OSScan
+    - Recon-PortScan
+    - Recon-HostDiscovery
+    - VulnerabilityScan
+    - BrowserHijacking
+    - CommandInjection
+    - XSS
+    - SqlInjection
+    - Backdoor_Malware
+    - Uploading_Attack
+    - BruteForce
+    - DictionaryBruteForce
+    - MITM-ArpSpoofing
+    - DNS_Spoofing
+    - Mirai-greeth_flood
+    - Mirai-udpplain

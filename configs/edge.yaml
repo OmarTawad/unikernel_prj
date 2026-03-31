@@ -1,0 +1,13 @@
+# Edge simulator configuration
+edge:
+  cloud_url: "http://localhost:8000"
+  partition_dir: "partitions"
+  profile_path: "profiles/default.json"
+  default_policy: "static_kmin"
+  request_timeout_seconds: 10
+  rtt_ewma_alpha: 0.3
+  log_level: "INFO"
+
+memory_budget:
+  budget_bytes: 25165824    # 24 MB
+  overhead_bytes: 2097152   # 2 MB

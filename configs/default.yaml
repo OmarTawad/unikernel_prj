@@ -1,0 +1,58 @@
+# UniSplit Default Configuration
+# All sections can be overridden by section-specific YAML files or environment variables.
+
+model:
+  num_features: 80
+  num_classes: 34
+  # Supported split IDs: [0, 3, 6, 7, 8, 9]
+  supported_split_ids: [0, 3, 6, 7, 8, 9]
+
+training:
+  batch_size: 256
+  epochs: 50
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  seed: 42
+  device: "cpu"
+  use_class_weights: true
+  scheduler_patience: 5
+  scheduler_factor: 0.5
+  num_workers: 4
+
+dataset:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  metadata_dir: "data/metadata"
+  splits_dir: "data/splits"
+  num_features: 80
+  num_classes: 34
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+  normalize: true
+
+memory_budget:
+  budget_bytes: 25165824    # 24 MB
+  overhead_bytes: 2097152   # 2 MB (OS/runtime overhead δ)
+
+cloud:
+  host: "0.0.0.0"
+  port: 8000
+  backend_type: "pytorch_cpu"
+  partition_dir: "partitions"
+  model_version: "v0.1.0"
+  request_timeout_seconds: 30
+  log_level: "INFO"
+
+edge:
+  cloud_url: "http://localhost:8000"
+  partition_dir: "partitions"
+  profile_path: "profiles/default.json"
+  default_policy: "static_kmin"
+  request_timeout_seconds: 10
+  rtt_ewma_alpha: 0.3
+  log_level: "INFO"
+
+logging:
+  level: "INFO"
+  format: "json"

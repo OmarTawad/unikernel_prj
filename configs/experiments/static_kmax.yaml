@@ -1,0 +1,14 @@
+# Experiment: Always use deepest feasible split (least offloading)
+experiment:
+  name: "static_kmax"
+  description: "Static policy: always deepest feasible split point"
+  policy: "static_kmax"
+  num_samples: -1
+  output_dir: "experiments/results/static_kmax"
+
+edge:
+  default_policy: "static_kmax"
+
+memory_budget:
+  budget_bytes: 25165824
+  overhead_bytes: 2097152

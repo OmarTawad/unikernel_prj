@@ -1,0 +1,16 @@
+# Experiment: Fixed split at k=7 (after GlobalAvgPool — smallest activation)
+experiment:
+  name: "fixed_k7"
+  description: "Fixed split at k=7 (after GlobalAvgPool, 64-float payload)"
+  policy: "fixed"
+  policy_args:
+    split_id: 7
+  num_samples: -1
+  output_dir: "experiments/results/fixed_k7"
+
+edge:
+  default_policy: "fixed"
+
+memory_budget:
+  budget_bytes: 25165824
+  overhead_bytes: 2097152

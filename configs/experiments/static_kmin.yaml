@@ -1,0 +1,14 @@
+# Experiment: Always use shallowest feasible split (most offloading)
+experiment:
+  name: "static_kmin"
+  description: "Static policy: always shallowest feasible split point"
+  policy: "static_kmin"
+  num_samples: -1  # -1 = all test samples
+  output_dir: "experiments/results/static_kmin"
+
+edge:
+  default_policy: "static_kmin"
+
+memory_budget:
+  budget_bytes: 25165824
+  overhead_bytes: 2097152
