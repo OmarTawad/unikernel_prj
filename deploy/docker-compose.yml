@@ -1,0 +1,63 @@
+# UniSplit Docker Compose
+# CPU-first deployment for the current VPS stage.
+
+services:
+  cloud:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.cloud
+    container_name: unisplit-cloud
+    ports:
+      - "${CLOUD_PORT:-8000}:8000"
+    volumes:
+      - ../partitions:/app/partitions:ro
+      - ../configs:/app/configs:ro
+      - ../profiles:/app/profiles:ro
+    environment:
+      - UNISPLIT_CLOUD_HOST=0.0.0.0
+      - UNISPLIT_CLOUD_PORT=8000
+      - UNISPLIT_BACKEND_TYPE=pytorch_cpu
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - unisplit-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "4"
+
+  edge:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.edge
+    container_name: unisplit-edge
+    depends_on:
+      cloud:
+        condition: service_healthy
+    volumes:
+      - ../partitions:/app/partitions:ro
+      - ../data/processed:/app/data/processed:ro
+      - ../data/splits:/app/data/splits:ro
+      - ../data/metadata:/app/data/metadata:ro
+      - ../configs:/app/configs:ro
+      - ../profiles:/app/profiles:ro
+    environment:
+      - UNISPLIT_CLOUD_URL=http://cloud:8000
+    networks:
+      - unisplit-net
+    deploy:
+      resources:
+        limits:
+          # Simulate edge memory constraint
+          memory: 256M
+          cpus: "1"
+
+networks:
+  unisplit-net:
+    driver: bridge
