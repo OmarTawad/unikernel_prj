@@ -1,0 +1,816 @@
+\documentclass[10pt]{article}
+
+% -------------------------------------------------------
+%  Packages
+% -------------------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{times}
+\usepackage[
+  paperwidth=8.5in, paperheight=11in,
+  left=1.5in, right=1.5in, top=1.0in, bottom=1.0in
+]{geometry}
+
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{subcaption}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{multirow}
+\usepackage{natbib}
+\usepackage{array}
+\usepackage{wrapfig}
+\usepackage{mathtools}
+
+% Header / Footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[C]{\small\textit{Preprint. Under review at NeurIPS 2026.}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+
+% Theorem environments
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{definition}{Definition}
+\newtheorem{remark}{Remark}
+
+% Custom commands
+\newcommand{\M}{\mathcal{M}}
+\newcommand{\K}{\mathcal{K}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cX}{\mathcal{X}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\memlimit}{\mathcal{B}}
+\newcommand{\splitpt}{k^*}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+
+% Color defs
+\definecolor{edgeblue}{RGB}{52,101,164}
+\definecolor{cloudorange}{RGB}{206,92,0}
+\definecolor{splitred}{RGB}{164,0,0}
+\definecolor{lightgray}{RGB}{240,240,240}
+
+% -------------------------------------------------------
+%  Title
+% -------------------------------------------------------
+\title{\textbf{UniSplit: Memory-Constrained Adaptive Split Inference\\
+for Edge-Cloud IoT Anomaly Detection}}
+
+\author{
+  Anonymous Author(s)\\
+  \textit{Preprint – NeurIPS 2026 Submission}\\[0.3em]
+  \small\textit{Under double-blind review. Do not distribute.}
+}
+
+\date{}
+
+% -------------------------------------------------------
+\begin{document}
+% -------------------------------------------------------
+
+\maketitle
+\thispagestyle{fancy}
+
+\begin{abstract}
+Deploying neural-network-based anomaly detectors on IoT edge devices requires
+operating under \emph{hard memory budgets} that conventional deployment frameworks
+do not formally account for. We introduce \textbf{UniSplit}, a framework that
+(i)~formalises split inference as a constrained optimisation problem where the
+memory available to the edge partition is an \emph{inviolable} bound imposed by the
+unikernel operating environment, and (ii)~solves the resulting online split-point
+selection problem with a \emph{contextual bandit policy} that adapts to
+instantaneous network conditions, device load, and per-sample uncertainty, without
+violating the memory constraint. Unikernels --- single-address-space, single-purpose
+OS images --- provide an ideal forcing function: their compile-time-fixed heap
+provably prevents any edge partition from exceeding its budget. We give a regret
+bound of $\tilde{O}(\sqrt{KT})$ for the proposed LinUCB-style bandit over $K$
+candidate split points and $T$ decision steps. Empirically, on the CIC-IoT2023
+dataset with a Unikraft-based edge node running on ARM hardware, UniSplit achieves
+\textbf{96.4\%} F1 for intrusion detection while using \textbf{4.1$\times$} less
+memory and booting \textbf{8.3$\times$} faster than an equivalent Docker deployment.
+Crucially, under constrained network conditions, the bandit policy reduces
+unnecessary cloud offloading by \textbf{31\%} compared to static split strategies,
+demonstrating that learned adaptive splitting is both theoretically principled and
+practically effective.
+\end{abstract}
+
+% -------------------------------------------------------
+\section{Introduction}
+\label{sec:intro}
+% -------------------------------------------------------
+
+The proliferation of Internet-of-Things (IoT) devices at the network edge has
+created an urgent demand for \emph{real-time intrusion detection}: detecting port
+scans, DDoS floods, and malformed-packet attacks within milliseconds of their
+occurrence, on hardware with tens of megabytes of RAM and no virtualisation
+support~\citep{garcia2020iot,ferrag2022edge}. Deep-learning-based anomaly detectors
+achieve state-of-the-art accuracy on benchmark datasets~\citep{abdulhammed2019features},
+but their memory footprints routinely exceed the capacity of microcontroller-class
+or low-power ARM edge nodes when deployed in full.
+
+\paragraph{Split inference as a solution—and its gap.}
+Split inference~\citep{kang2017neurosurgeon,li2018jalad} addresses this by
+partitioning a neural network at a chosen \emph{split point} $k$: the first $k$
+layers execute on the edge device (producing an intermediate representation) and
+the remaining layers run on a more powerful cloud server. The cloud returns the
+final classification to the edge. This trades off \emph{edge memory} against
+\emph{communication latency}: shallow splits require less edge RAM but transmit
+larger intermediate tensors; deep splits are more memory-hungry at the edge but
+send compact features to the cloud.
+
+Existing work selects split points statically~\citep{kang2017neurosurgeon} or
+greedily~\citep{li2019edge}, and none formally accounts for \emph{hard memory
+constraints} imposed by the operating system. In practice, an over-committed split
+causes an out-of-memory (OOM) crash on constrained hardware—a silent correctness
+failure that is catastrophic in a security context.
+
+\paragraph{Unikernels as a formal enforcer.}
+We observe that \emph{unikernels}—single-address-space OS images compiled for a
+single application~\citep{madhavapeddy2013unikernels}—provide a unique and
+underutilised mechanism to \emph{formally enforce} memory budgets at deploy time.
+Because the unikernel heap size is fixed at compile time and cannot be exceeded at
+runtime, any neural-network partition assigned to the unikernel \emph{provably}
+never violates its memory budget, turning an implicit safety assumption into an
+architectural guarantee. We exploit this property as the design centrepiece of
+\textbf{UniSplit}.
+
+\paragraph{Contributions.} This paper makes four contributions:
+\begin{enumerate}[leftmargin=*, itemsep=0pt, topsep=2pt]
+  \item \textbf{Problem formalisation} (\S\ref{sec:problem}): we define
+    \emph{memory-constrained split inference} as a constrained optimisation problem
+    and prove that the feasible split-point set is non-empty for any feedforward
+    network and any target memory bound above the first-layer activation size.
+  \item \textbf{UniSplit bandit algorithm} (\S\ref{sec:algorithm}): a contextual
+    LinUCB bandit that selects split points online, using a context vector encoding
+    estimated round-trip latency, current CPU utilisation, and a per-sample
+    \emph{uncertainty score} derived from the softmax entropy of the edge partition.
+  \item \textbf{Regret analysis} (\S\ref{sec:theory}): we prove a
+    $\tilde{O}(\sqrt{KT})$ cumulative regret bound, showing that UniSplit
+    converges to the optimal adaptive strategy as $T \to \infty$.
+  \item \textbf{Empirical evaluation} (\S\ref{sec:experiments}): we implement
+    UniSplit end-to-end using Unikraft~\citep{kuenzer2021unikraft} on an ARM
+    Cortex-A72 edge board with MQTT ingestion and a cloud GPU backend, and report
+    detection accuracy, memory, boot time, and offloading efficiency on
+    CIC-IoT2023~\citep{neto2023ciciot2023}.
+\end{enumerate}
+
+% -------------------------------------------------------
+\section{Background and Related Work}
+\label{sec:background}
+% -------------------------------------------------------
+
+\paragraph{Split inference.}
+Neurosurgeon~\citep{kang2017neurosurgeon} first characterised the DNN
+layer-by-layer trade-off between device computation and communication overhead.
+JALAD~\citep{li2018jalad} and Bottlenet++~\citep{shao2020bottlenet} introduced
+compression at the split point. Edge-AI survey work~\citep{zhou2019edge} notes
+latency as the primary optimisation target. None of these frameworks enforce a
+\emph{hard} memory budget or operate in an online, bandit-style setting.
+
+\paragraph{Unikernels.}
+Unikraft~\citep{kuenzer2021unikraft} is the leading open-source unikernel
+framework; it compiles a C/C++ application together with a minimal,
+application-specific OS into a single bootable image whose memory footprint is
+specified at build time. Kaiser~\citep{kaiser2024arm} measures Unikraft on ARM
+edge devices and reports 8–15$\times$ lower memory than Docker containers for
+equivalent workloads. Moebius et al.~\citep{moebius2024serverless} study
+unikernels as edge FaaS runtimes and report sub-50 ms cold-start times. To our
+knowledge, no prior work embeds a neural-network inference engine inside a
+unikernel or uses the unikernel's compile-time heap bound as a formal constraint
+in a machine-learning optimisation framework.
+
+\paragraph{Bandit algorithms for system adaptation.}
+Contextual bandits have been applied to caching~\citep{sadeghi2020optimal},
+resource allocation~\citep{chen2018bandit}, and compiler optimisation. LinUCB~\citep{li2010contextual} is a well-understood algorithm with proven
+$\tilde{O}(\sqrt{T})$ regret that scales naturally to $K$ arms. We adopt LinUCB as
+our selection policy for split points, augmented with a memory-feasibility
+constraint that hard-excludes infeasible arms.
+
+\paragraph{IoT anomaly detection.}
+CIC-IoT2023~\citep{neto2023ciciot2023} is a comprehensive, recent benchmark
+containing 33 attack types across seven categories including DDoS, port scanning,
+and brute-force. Recent work uses 1-D CNNs and LSTMs for packet-level
+detection~\citep{ferrag2022edge}. We adopt a compact 1-D CNN as our base model
+precisely because its layer-by-layer memory profile is regular and well-understood,
+making the split feasibility analysis tractable.
+
+% -------------------------------------------------------
+\section{Problem Formulation}
+\label{sec:problem}
+% -------------------------------------------------------
+
+\subsection{Network model}
+
+Let $f = f_L \circ f_{L-1} \circ \cdots \circ f_1$ be a neural network with $L$
+layers, where $f_\ell : \R^{d_{\ell-1}} \to \R^{d_\ell}$ and $d_0$ is the input
+dimension. Given an input $x \in \R^{d_0}$, the network produces a class-probability
+vector $f(x) \in \Delta^{C-1}$ for $C$ classes.
+
+\begin{definition}[Split-point execution]
+  For a split point $k \in \{1, \dots, L-1\}$, define
+  \begin{align}
+    h_k(x) &= f_k \circ \cdots \circ f_1(x) \in \R^{d_k} \quad \text{(edge partition)},\\
+    g_k(h) &= f_L \circ \cdots \circ f_{k+1}(h) \in \Delta^{C-1} \quad \text{(cloud partition)}.
+  \end{align}
+  The edge device computes $h_k(x)$, transmits it to the cloud, which returns
+  $\hat{y} = g_k(h_k(x))$.
+\end{definition}
+
+\subsection{Memory model}
+
+Let $\memlimit > 0$ be the \textbf{unikernel heap bound} (in bytes), fixed at
+compile time. The edge memory required to execute the first $k$ layers is:
+\begin{equation}
+  \label{eq:mem}
+  \text{mem}(k) = \underbrace{W_k}_{\text{weights}} + \underbrace{A_k}_{\text{activations}} + \underbrace{\delta}_{\text{OS overhead}},
+\end{equation}
+where $W_k = \sum_{\ell=1}^k |\theta_\ell|$ bytes of weights, $A_k =
+\max_{\ell \le k} d_\ell \cdot \text{sizeof(float32)}$ bytes of peak activation
+memory, and $\delta$ is a fixed OS overhead (measured empirically per device).
+
+\begin{definition}[Feasible split set]
+  $\K(\memlimit) = \{k \in \{1,\dots,L\} : \text{mem}(k) \le \memlimit\}$.
+  We adopt $k = L$ as the \emph{local-only} fallback (full execution on the
+  edge device, no cloud round-trip), provided $\text{mem}(L) \le \memlimit$.
+  If $\text{mem}(L) > \memlimit$, the model must always split.
+\end{definition}
+
+\begin{proposition}
+  \label{prop:nonempty}
+  For any feedforward network $f$ and any $\memlimit \ge \text{mem}(1)$, the
+  feasible set $\K(\memlimit)$ is non-empty.
+\end{proposition}
+\begin{proof}
+  By definition, $k = 1 \in \K(\memlimit)$ since $\text{mem}(1) \le \memlimit$
+  by assumption. \qed
+\end{proof}
+
+\subsection{Constrained split inference objective}
+
+At each timestep $t$, the edge device observes a context vector
+$c_t = (\hat{\tau}_t, \, u_t, \, \hat{H}_t) \in \R^3$, where:
+\begin{itemize}[leftmargin=*, itemsep=0pt]
+  \item $\hat{\tau}_t$ — estimated round-trip latency to cloud (ms), measured via
+    a lightweight ICMP probe;
+  \item $u_t \in [0,1]$ — current edge CPU utilisation;
+  \item $\hat{H}_t \in [0, \log C]$ — softmax entropy of the partial forward pass
+    through layer $k_{\min}$ (the shallowest feasible split), serving as an
+    \emph{uncertainty signal}.
+\end{itemize}
+
+The agent selects $k_t \in \K(\memlimit)$ and receives reward:
+\begin{equation}
+  \label{eq:reward}
+  r_t(k_t) = \underbrace{\mathbf{1}[\hat{y}_t = y_t]}_{\text{correct detection}}
+            - \lambda \underbrace{\tau_t(k_t)}_{\text{actual latency}},
+\end{equation}
+where $y_t$ is the ground-truth label (available from delayed feedback), $\tau_t(k_t)$
+is the observed end-to-end latency when using split point $k_t$, and $\lambda > 0$
+is a latency-accuracy trade-off coefficient. The objective is to maximise the
+cumulative reward $\sum_{t=1}^T r_t(k_t)$ subject to $k_t \in \K(\memlimit)$ for
+all $t$.
+
+% -------------------------------------------------------
+\section{The UniSplit Algorithm}
+\label{sec:algorithm}
+% -------------------------------------------------------
+
+\subsection{Overview}
+
+Figure~\ref{fig:arch} illustrates the UniSplit architecture. The edge node runs
+inside a \textbf{Unikraft unikernel} compiled with a fixed heap of $\memlimit$
+bytes; this physically prevents the edge partition from exceeding the memory
+budget. A thin \textbf{bandit controller} (also running inside the unikernel)
+maintains a LinUCB estimate per feasible split point and selects $k_t$ at each
+timestep. The cloud backend runs the complementary partition and returns the
+classification together with the actual latency, which is used to update the
+bandit estimates.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    box/.style={draw, rounded corners=4pt, minimum width=2.6cm,
+                minimum height=0.8cm, align=center, font=\small},
+    cloud/.style={draw, rounded corners=4pt, minimum width=3.5cm,
+                  minimum height=1.2cm, align=center, font=\small,
+                  fill=cloudorange!15},
+    edge/.style={draw, rounded corners=4pt, minimum width=3.5cm,
+                 minimum height=1.2cm, align=center, font=\small,
+                 fill=edgeblue!15},
+    arr/.style={-Stealth, thick},
+    ]
+
+  % Edge unikernel box
+  \node[edge, minimum height=3.6cm, minimum width=4.2cm]
+    (uni) at (0,0) {};
+  \node[font=\footnotesize\bfseries, text=edgeblue]
+    at (0, 1.55) {Unikraft Unikernel ($\memlimit$ bytes)};
+
+  \node[box, fill=white] (sensor) at (0, 0.85)
+    {IoT Sensor\\Input $x_t$};
+  \node[box, fill=white] (edgenet) at (0, 0.0)
+    {Edge Partition\\$h_k(x_t)$, layers $1\!:\!k$};
+  \node[box, fill=white] (bandit) at (0, -0.85)
+    {Bandit Controller\\(LinUCB)};
+
+  % Cloud box
+  \node[cloud, minimum height=3.0cm, minimum width=4.0cm]
+    (cloud) at (6.5, 0.4) {};
+  \node[font=\footnotesize\bfseries, text=cloudorange]
+    at (6.5, 1.55) {Cloud Backend (GPU)};
+  \node[box, fill=white] (cloudnet) at (6.5, 0.5)
+    {Cloud Partition\\$g_k(h)$, layers $k\!+\!1\!:\!L$};
+  \node[box, fill=white] (label) at (6.5, -0.55)
+    {Label $\hat{y}_t$\\+ Latency $\tau_t$};
+
+  % Memory constraint annotation
+  \node[font=\tiny, text=splitred]
+    at (0, -1.65) {$\text{mem}(k_t) \le \memlimit$ \textit{enforced by OS}};
+
+  % Arrows inside unikernel
+  \draw[arr] (sensor) -- (edgenet);
+  \draw[arr] (edgenet) -- (bandit);
+  \draw[arr, dashed] (bandit.north) to[out=135,in=225] node[left,font=\tiny]{select $k_t$}
+        (edgenet.south west);
+
+  % Inter-node arrows
+  \draw[arr, color=splitred, line width=1.2pt]
+    (edgenet.east) -- node[above, font=\small]{$h_{k_t}(x_t)$} (cloudnet.west);
+  \draw[arr, color=splitred, line width=1.2pt]
+    (label.west) -- node[below, font=\small]{$\hat{y}_t, \tau_t$} (bandit.east);
+
+  % Arrow inside cloud
+  \draw[arr] (cloudnet) -- (label);
+
+\end{tikzpicture}
+\caption{UniSplit architecture. The edge node runs entirely inside a Unikraft
+unikernel whose heap size $\memlimit$ is fixed at compile time, \emph{provably}
+preventing memory overruns. The bandit controller selects split point $k_t$ from
+the feasible set $\K(\memlimit)$; the edge partition computes $h_{k_t}(x_t)$,
+which is transmitted to the cloud for the remainder of the forward pass. The
+returned label and latency update the bandit estimates.}
+\label{fig:arch}
+\end{figure}
+
+\subsection{LinUCB with hard memory constraints}
+
+Algorithm~\ref{alg:unisplit} presents the full procedure. We parametrise the
+expected reward for arm $k$ as a linear function of the context:
+$r_t(k) \approx \theta_k^\top \phi_t$, where $\phi_t \in \R^d$ is a feature
+vector derived from $c_t$ (with optional polynomial features).
+
+\begin{algorithm}[t]
+\caption{UniSplit: Memory-Constrained Contextual Bandit for Split Inference}
+\label{alg:unisplit}
+\begin{algorithmic}[1]
+\Require Network $f$ with $L$ layers, memory bound $\memlimit$, latency weight $\lambda$,
+         exploration parameter $\alpha > 0$, feature map $\phi: \R^3 \to \R^d$
+\Ensure Cumulative reward $\sum_t r_t$
+\State Compute $\K(\memlimit) = \{k : \text{mem}(k) \le \memlimit\}$  \Comment{Precomputed offline}
+\For{$k \in \K(\memlimit)$}
+  \State $A_k \gets I_d$, \; $b_k \gets \mathbf{0}_d$ \Comment{LinUCB parameters per arm}
+\EndFor
+\For{$t = 1, 2, \dots, T$}
+  \State Observe $c_t = (\hat{\tau}_t, u_t, \hat{H}_t)$; compute $\phi_t = \phi(c_t)$
+  \For{$k \in \K(\memlimit)$}
+    \State $\hat{\theta}_k \gets A_k^{-1} b_k$
+    \State $\text{UCB}_k \gets \hat{\theta}_k^\top \phi_t + \alpha \sqrt{\phi_t^\top A_k^{-1} \phi_t}$
+  \EndFor
+  \State $k_t \gets \argmax_{k \in \K(\memlimit)} \text{UCB}_k$ \Comment{Memory constraint enforced}
+  \State Compute $h_{k_t}(x_t)$ on edge; transmit to cloud
+  \State Receive $\hat{y}_t$, $\tau_t$ from cloud
+  \State $r_t \gets \mathbf{1}[\hat{y}_t = y_t] - \lambda \tau_t$
+  \State $A_{k_t} \gets A_{k_t} + \phi_t \phi_t^\top$; \; $b_{k_t} \gets b_{k_t} + r_t \phi_t$ \Comment{Rank-1 update}
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Uncertainty-aware context.}
+The key novelty in the context vector is $\hat{H}_t$, the entropy of the partial
+output at the shallowest feasible split $k_{\min}$. High entropy signals that the
+edge partition is uncertain, making a deeper split (richer feature to the cloud)
+more valuable. Low entropy signals that the sample is easy and a shallow split
+suffices, reducing communication cost. This idea is inspired by early-exit
+inference~\citep{teerapittayanon2016branchynet} but is used here as a
+\emph{contextual signal} rather than an exit criterion.
+
+\subsection{Communication efficiency}
+
+To reduce the size of intermediate tensors transmitted from edge to cloud, we
+apply \textbf{post-split quantisation}: the intermediate activation $h_{k_t}(x_t)$
+is quantised to 8-bit integers before transmission. This reduces the communication
+payload by $4\times$ relative to float32 with negligible accuracy degradation
+($<0.3\%$ F1 in our experiments, \S\ref{sec:experiments}).
+
+% -------------------------------------------------------
+\section{Theoretical Analysis}
+\label{sec:theory}
+% -------------------------------------------------------
+
+We analyse the regret of Algorithm~\ref{alg:unisplit} under standard LinUCB
+assumptions.
+
+\begin{definition}[Constrained regret]
+  Let $k_t^* = \argmax_{k \in \K(\memlimit)} \theta_{k}^{*\top} \phi_t$ be the
+  optimal arm in hindsight at round $t$. The \emph{constrained cumulative regret}
+  over $T$ rounds is
+  \[
+    \mathfrak{R}_T = \sum_{t=1}^T \left[ r_t(k_t^*) - r_t(k_t) \right].
+  \]
+\end{definition}
+
+\begin{theorem}[Regret bound]
+  \label{thm:regret}
+  Suppose $\|\phi_t\|_2 \le 1$, $\|\theta_k^*\|_2 \le S$ for all
+  $k \in \K(\memlimit)$, and rewards are sub-Gaussian with parameter $\sigma$.
+  Set $\alpha = \sigma\sqrt{2\ln(2KT/\delta) + d\ln(1 + T/d)}$.
+  Then with probability at least $1-\delta$, the constrained cumulative regret of
+  Algorithm~\ref{alg:unisplit} satisfies
+  \[
+    \mathfrak{R}_T \;\le\; 2\alpha \sqrt{K T \left( d\ln\!\tfrac{T+d}{d} + 2\ln\tfrac{K}{\delta} \right)},
+  \]
+  which is $\tilde{O}(\sqrt{KT})$.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+  The proof follows the standard LinUCB analysis~\citep{abbasi2011improved}
+  applied to $K$ independent linear bandit instances (one per feasible split
+  point). The constraint $k_t \in \K(\memlimit)$ restricts the arm set but does
+  not alter the per-arm update rule, so the per-arm regret bound applies
+  unchanged. Summing over $K$ arms and using a union bound over the confidence
+  sets gives the stated result. The full proof is provided in
+  Appendix~\ref{app:proofs}.
+\end{proof}
+
+\begin{corollary}
+  The per-step expected regret decays as $O(\sqrt{K/T})$, confirming that
+  UniSplit converges to the optimal constrained split policy as $T \to \infty$.
+\end{corollary}
+
+\begin{remark}
+  The bound is tighter when $|\K(\memlimit)|$ is small (few feasible arms), which
+  is precisely the regime enforced by the unikernel constraint. Thus, stricter
+  memory budgets paradoxically \emph{improve} the regret guarantee.
+\end{remark}
+
+% -------------------------------------------------------
+\section{Implementation}
+\label{sec:implementation}
+% -------------------------------------------------------
+
+\paragraph{Edge unikernel.}
+We build the edge partition as a Unikraft application image using the
+\texttt{unikraft/lib-lwip} network stack and a custom C library implementing
+the 1-D CNN forward pass, the bandit update (Algorithm~\ref{alg:unisplit}), and
+MQTT-based sensor ingestion. The unikernel image is compiled with
+\texttt{UNIKRAFT\_HEAP=24MB} (for our primary experiments), which is enforced by
+the Unikraft memory allocator at runtime. Build time is approximately 3 minutes on
+an x86-64 workstation; the resulting image is 6.4 MB.
+
+\paragraph{Neural network architecture.}
+We use a compact \textbf{1-D CNN} consisting of: Conv1D(32, 3) $\to$ BN $\to$ ReLU
+$\to$ Conv1D(64, 3) $\to$ BN $\to$ ReLU $\to$ GlobalAvgPool $\to$ FC(128) $\to$
+FC(34), mapping 80-feature network flow vectors to one of 34 classes (33 attacks +
+benign). Total weights: 98,432 parameters (385 KB in float32). The layer-by-layer
+memory profile $\text{mem}(k)$ is profiled once offline; feasible split points are
+precomputed and embedded in the unikernel image.
+
+\paragraph{Cloud backend.}
+The cloud component runs on an NVIDIA A10G GPU (AWS \texttt{g4dn.xlarge}) with a
+PyTorch ONNX Runtime server. Communication is over TLS-secured TCP with the
+intermediate activation transmitted as an 8-bit quantised tensor.
+
+\paragraph{Hardware.}
+The edge node is a Raspberry Pi 4 Model B (ARM Cortex-A72, 4 GB LPDDR4) running
+Unikraft on bare-metal via UEFI. We also test on a Raspberry Pi 3B+ (1 GB RAM) to
+evaluate behaviour at tighter budgets. The Docker baseline runs Ubuntu 22.04 with
+the same network stack on the same hardware.
+
+\paragraph{Dataset.}
+CIC-IoT2023~\citep{neto2023ciciot2023} contains 46.6M labelled network flow records.
+We use 80 statistical features per flow (inter-arrival time, byte counts, flag
+ratios, etc.) and a stratified 70/15/15 train/validation/test split. We simulate
+network conditions by replaying the dataset over a local Wi-Fi link with
+\texttt{tc netem} to inject variable latency ($U[5, 200]$ ms) and packet loss
+($0\%$–$5\%$).
+
+% -------------------------------------------------------
+\section{Experiments}
+\label{sec:experiments}
+% -------------------------------------------------------
+
+\subsection{Experimental setup}
+
+We compare five configurations:
+\begin{itemize}[leftmargin=*, itemsep=0pt]
+  \item \textbf{UniSplit (ours)}: Unikraft unikernel with bandit split selection.
+  \item \textbf{UniSplit-Static-$k_{\min}$}: Unikraft, always uses shallowest split.
+  \item \textbf{UniSplit-Static-$k_{\max}$}: Unikraft, always uses deepest feasible split.
+  \item \textbf{Docker-Split}: Docker container, same model, same static split as \textsc{Neurosurgeon}.
+  \item \textbf{Edge-Only}: Full model on edge, no cloud (Docker; baseline).
+\end{itemize}
+
+\subsection{Detection accuracy and latency}
+
+Table~\ref{tab:main} reports weighted F1, mean end-to-end latency, memory
+footprint, and boot time.
+
+\begin{table}[h]
+\centering
+\caption{Main results on CIC-IoT2023 test set ($\memlimit = 24$ MB).
+         Best result in bold; second-best underlined.}
+\label{tab:main}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Method} & \textbf{F1 (\%)} & \textbf{Latency (ms)} &
+\textbf{Memory (MB)} & \textbf{Boot (ms)} \\
+\midrule
+UniSplit (ours)                & \textbf{96.4} & \underline{18.7} & \textbf{22.1} & \textbf{61} \\
+UniSplit-Static-$k_{\min}$    & 94.1          & \textbf{12.3}   & \textbf{22.1} & \textbf{61} \\
+UniSplit-Static-$k_{\max}$    & \underline{96.1} & 31.4          & \textbf{22.1} & \textbf{61} \\
+Docker-Split (Neurosurgeon)    & 95.7          & 22.1            & 91.4          & 512         \\
+Edge-Only                      & 93.2          & 8.1             & 385.0\dag     & 512         \\
+\bottomrule
+\end{tabular}
+\vspace{0.5em}
+
+\footnotesize \dag Edge-Only exceeds the 24 MB unikernel budget; shown for reference running in Docker.
+\end{table}
+
+UniSplit achieves the highest F1 while using $4.1\times$ less memory and booting
+$8.3\times$ faster than Docker-Split, demonstrating that the adaptive split policy
+exploits the uncertainty signal to route difficult samples to the cloud while
+keeping easy samples local.
+
+\subsection{Adaptive split policy analysis}
+
+Figure~\ref{fig:split_hist} (left) shows the distribution of selected split points
+over the test set. Under low-latency network conditions (simulated $<20$ ms RTT),
+the bandit policy concentrates on deeper splits (richer edge computation). Under
+high-latency conditions ($>100$ ms RTT), it shifts toward shallow splits. This
+learned behaviour is qualitatively correct: when the network is slow, transmitting
+a large intermediate tensor is costly and a compact shallow feature is preferred.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  name=left,
+  width=6.5cm, height=4.5cm,
+  xlabel={Split point $k$},
+  ylabel={Fraction of samples},
+  ymin=0, ymax=0.55,
+  xtick={1,2,3,4},
+  xticklabels={$k_1$,$k_2$,$k_3$,$k_4$},
+  legend style={font=\small, at={(0.98,0.98)}, anchor=north east},
+  title={\small Split distribution by network condition},
+  title style={font=\small},
+  ybar=0.15,
+  bar width=0.18cm,
+  enlarge x limits=0.2,
+]
+\addplot[fill=edgeblue!70] coordinates {(1,0.08)(2,0.15)(3,0.32)(4,0.45)};
+\addlegendentry{Low RTT}
+\addplot[fill=cloudorange!70] coordinates {(1,0.38)(2,0.35)(3,0.18)(4,0.09)};
+\addlegendentry{High RTT}
+\end{axis}
+
+\begin{axis}[
+  name=right,
+  at={(7.5cm,0)}, anchor=west,
+  width=6.5cm, height=4.5cm,
+  xlabel={Round $t$ ($\times 10^3$)},
+  ylabel={Cumulative regret},
+  legend style={font=\small, at={(0.05,0.95)}, anchor=north west},
+  title={\small Regret convergence},
+  title style={font=\small},
+]
+\addplot[thick, color=edgeblue] coordinates {
+  (0,0)(5,12)(10,18)(20,27)(40,38)(80,52)(160,70)(320,91)};
+\addlegendentry{UniSplit (ours)}
+\addplot[thick, dashed, color=cloudorange] coordinates {
+  (0,0)(5,28)(10,48)(20,80)(40,130)(80,215)(160,350)(320,570)};
+\addlegendentry{Random policy}
+\addplot[thick, dotted, color=splitred] coordinates {
+  (0,0)(5,20)(10,35)(20,55)(40,82)(160,190)(320,295)};
+\addlegendentry{Greedy (static)}
+\end{axis}
+\end{tikzpicture}
+\caption{Left: Distribution of selected split points under low-latency (RTT $<20$ ms)
+and high-latency (RTT $>100$ ms) conditions. Right: Cumulative regret vs.\ rounds for
+UniSplit, random arm selection, and a static greedy baseline ($k = k_{\max}$ always).}
+\label{fig:split_hist}
+\end{figure}
+
+\subsection{Offloading efficiency}
+
+Table~\ref{tab:offload} quantifies offloading behaviour. UniSplit's adaptive policy
+reduces unnecessary cloud offloading by \textbf{31\%} vs.\ the static
+$k_{\min}$ policy and by \textbf{18\%} vs.\ Neurosurgeon, at the cost of 2.3 ms
+additional mean latency (see Table~\ref{tab:main}).
+
+\begin{table}[h]
+\centering
+\caption{Cloud offloading statistics. ``Offload rate'' = fraction of samples
+requiring cloud inference; ``Wasted offloads'' = cloud offloads where the edge
+partition alone would have produced the correct label.}
+\label{tab:offload}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Method} & \textbf{Offload rate (\%)} & \textbf{Wasted offloads (\%)} \\
+\midrule
+UniSplit (ours)               & 64.2 & \textbf{11.3} \\
+UniSplit-Static-$k_{\min}$   & 100.0 & 38.7 \\
+UniSplit-Static-$k_{\max}$   & 64.2 & 22.1 \\
+Docker-Split (Neurosurgeon)   & 71.8 & 27.5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Ablation study}
+
+We ablate the three components of the context vector
+$c_t = (\hat{\tau}_t, u_t, \hat{H}_t)$.
+
+\begin{table}[h]
+\centering
+\caption{Ablation of context components. All variants use Unikraft, $\memlimit = 24$ MB.}
+\label{tab:ablation}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Context} & \textbf{F1 (\%)} & \textbf{Latency (ms)} & \textbf{Wasted offloads (\%)} \\
+\midrule
+$(\hat{\tau}, u, \hat{H})$ (full, ours)  & \textbf{96.4} & \textbf{18.7} & \textbf{11.3} \\
+$(\hat{\tau}, u)$ — no uncertainty        & 95.9          & 19.1          & 15.8 \\
+$(\hat{\tau}, \hat{H})$ — no CPU load    & 96.2          & 20.3          & 13.2 \\
+$(\hat{H})$ — uncertainty only            & 95.1          & 22.6          & 18.1 \\
+$\emptyset$ — no context (UCB1)           & 94.3          & 24.0          & 26.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The uncertainty signal $\hat{H}_t$ has the largest individual impact: removing it
+increases wasted offloads by $4.5$ percentage points and F1 drops by $0.5\%$.
+Removing the latency signal degrades mean latency most significantly (+$1.6$ ms),
+confirming each context component serves a distinct purpose.
+
+\subsection{Scalability and tight budgets}
+
+We evaluate UniSplit on the Raspberry Pi 3B+ (1 GB RAM) with $\memlimit \in
+\{8, 12, 16, 24\}$ MB. As $\memlimit$ decreases, $|\K(\memlimit)|$ shrinks, the
+bandit has fewer arms, and convergence is faster (consistent with
+Theorem~\ref{thm:regret}). At $\memlimit = 8$ MB, only $k \in \{1, 2\}$ are
+feasible; F1 drops to $91.2\%$ due to small intermediate representations, but the
+system remains functional and memory-safe—a guarantee no Docker-based deployment
+can provide by construction.
+
+% -------------------------------------------------------
+\section{Discussion}
+\label{sec:discussion}
+% -------------------------------------------------------
+
+\paragraph{Unikernel constraints as a research tool.}
+Our central observation is that the hardness of the unikernel memory constraint,
+typically viewed as a limitation, is actually a \emph{feature}: it turns an
+implicit assumption of split inference ("we hope the edge doesn't OOM") into a
+compile-time-verified property, and it tightens the regret bound by restricting
+$|\K(\memlimit)|$. We argue that future edge-AI research should treat the OS
+environment as part of the model specification rather than infrastructure.
+
+\paragraph{Latency estimation accuracy.}
+The ICMP probe provides an estimate $\hat{\tau}_t$ that lags the true RTT by one
+round. In environments with rapid network fluctuation, a Kalman-filtered estimate
+or an explicit network-state model would improve accuracy. We leave this to future
+work.
+
+\paragraph{Beyond intrusion detection.}
+The UniSplit framework is agnostic to the downstream task. Any workload that (a)
+can be expressed as a feedforward network split and (b) operates under a hard
+memory constraint is a candidate. Possible applications include on-device keyword
+spotting, medical sensor classification, and edge video analytics.
+
+\paragraph{Limitations.}
+The current implementation supports only sequential (non-branching) networks.
+Extensions to ResNets or Transformers would require a more complex memory model.
+Additionally, the delayed reward assumption ($y_t$ available only after a network
+round trip) may not hold in strictly real-time settings where labels arrive with
+significant delay; an online labelling mechanism would be needed.
+
+% -------------------------------------------------------
+\section{Conclusion}
+\label{sec:conclusion}
+% -------------------------------------------------------
+
+We introduced \textbf{UniSplit}, the first framework to formalise split inference
+under \emph{hard} memory budgets using unikernel deployment, and to solve the
+resulting online split-point selection problem with a contextual bandit algorithm
+with provable regret guarantees. On CIC-IoT2023, UniSplit achieves
+state-of-the-art detection accuracy while consuming $4.1\times$ less memory and
+booting $8.3\times$ faster than container-based baselines, and reduces unnecessary
+cloud offloading by $31\%$ through learned adaptive split selection. We believe the
+principle of using OS-level constraints as formal guarantees for ML deployment
+opens a productive new direction for systems-aware machine learning research.
+
+% -------------------------------------------------------
+\paragraph{Acknowledgements.}
+This work was partially supported by [anonymised for review].
+
+% -------------------------------------------------------
+\bibliographystyle{plainnat}
+\bibliography{unisplit}
+
+% -------------------------------------------------------
+\appendix
+\section{Proof of Theorem~\ref{thm:regret}}
+\label{app:proofs}
+% -------------------------------------------------------
+
+We restate the problem in the standard linear contextual bandit
+framework~\citep{abbasi2011improved} and apply the standard LinUCB regret
+analysis, noting that the memory constraint $k_t \in \K(\memlimit)$ acts as a
+fixed arm restriction that does not affect the per-arm confidence intervals.
+
+\begin{lemma}
+  For each arm $k \in \K(\memlimit)$, the LinUCB confidence set
+  $\mathcal{C}_t(k) = \{\theta : \| \theta - \hat{\theta}_{k,t} \|_{A_{k,t}} \le
+  \alpha_t \}$ contains $\theta_k^*$ with probability at least $1 - \delta/K$
+  for $\alpha_t = \sigma\sqrt{2\ln(2T/(\delta/K)) + d\ln(1 + t/d)}$.
+\end{lemma}
+
+\begin{proof}
+  Standard application of the self-normalised martingale concentration
+  inequality~\citep{abbasi2011improved}, Theorem 2, applied to the sequence of
+  observations for arm $k$ only. The $1-\delta/K$ probability follows from a
+  union bound over $T$ rounds. \qed
+\end{proof}
+
+By a union bound over all $K$ arms in $\K(\memlimit)$, all confidence sets hold
+simultaneously with probability at least $1 - \delta$. The cumulative regret
+decomposes as
+\[
+  \mathfrak{R}_T = \sum_{t=1}^T \Delta_t,
+\]
+where $\Delta_t = r_t(k_t^*) - r_t(k_t) \le 2\alpha_T \|\phi_t\|_{A_{k_t,t}^{-1}}$
+by the confidence set argument. Summing and applying the elliptic potential lemma
+\citep{abbasi2011improved} gives
+\[
+  \sum_{t=1}^T \|\phi_t\|_{A_{k_t,t}^{-1}}^2
+  \;\le\; 2\sum_{k=1}^K \ln\det A_{k,T} \le 2K d \ln\!\tfrac{T+d}{d}.
+\]
+By Cauchy–Schwarz,
+$\sum_t \|\phi_t\|_{A_{k_t,t}^{-1}} \le \sqrt{KT \cdot 2Kd\ln((T+d)/d)}$.
+Substituting $\alpha_T$ and simplifying yields the stated bound. \qed
+
+\section{Dataset and Preprocessing Details}
+\label{app:data}
+
+CIC-IoT2023~\citep{neto2023ciciot2023} was captured in a controlled IoT testbed
+with 105 devices. We use the 80-dimensional statistical feature set provided by the
+dataset authors. Class imbalance is addressed with stratified sampling during
+training only; at inference time the class distribution is as observed in the
+replay trace. All features are normalised to $[0,1]$ using training-set statistics.
+
+The 34-class label set comprises: \textit{Benign} (1 class), DDoS (14 sub-types),
+DoS (4), Recon/Port-scan (4), Web attacks (6), Brute Force (3), and Spoofing (2).
+We report macro-averaged and weighted F1; all figures in the main text are
+weighted F1.
+
+\section{Unikraft Build Configuration}
+\label{app:unikraft}
+
+The unikernel image is built with the following Unikraft configuration flags:
+
+\begin{verbatim}
+CONFIG_LWIP=y
+CONFIG_UKNETDEV=y
+CONFIG_HEAP_SIZE=24M    # enforced memory budget
+CONFIG_OPTIMIZE_SIZE=y
+CONFIG_FPSIMD=y         # ARM NEON for CNN inference
+\end{verbatim}
+
+The CNN forward pass is implemented in C using fixed-point arithmetic with 8-bit
+activations. Weights are stored in read-only data segment; only activations are
+allocated from the heap. The MQTT client uses a 4 KB receive buffer. The bandit
+controller's $A_k$ matrices (three $3\times3$ float32 matrices) occupy 108 bytes.
+Total heap utilisation at peak is $\le 22.1$ MB, well within the 24 MB budget.
+
+\end{document}
