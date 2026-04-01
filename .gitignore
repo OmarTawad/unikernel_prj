@@ -50,3 +50,9 @@ htmlcov/
 
 
 latex.txt
+
+*.pt
+
+*.json
+
+*.jsonl

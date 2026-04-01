@@ -52,7 +52,7 @@ def main() -> None:
         sys.exit(1)
 
     logger.info(f"Loading checkpoint from {checkpoint_path}")
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
     # Handle checkpoint format: either raw state_dict or wrapped
     if "model_state_dict" in checkpoint:

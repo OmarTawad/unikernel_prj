@@ -101,7 +101,7 @@ class Trainer:
         # Scheduler
         self.scheduler = ReduceLROnPlateau(
             self.optimizer, mode="max", factor=scheduler_factor,
-            patience=scheduler_patience, verbose=False,
+            patience=scheduler_patience,
         )
 
         # Training state — these get overwritten by resume()

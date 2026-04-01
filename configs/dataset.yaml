@@ -127,7 +127,7 @@ dataset:
     - SqlInjection
     - Backdoor_Malware
     - Uploading_Attack
-    - BruteForce
+    - Mirai-greip_flood
     - DictionaryBruteForce
     - MITM-ArpSpoofing
     - DNS_Spoofing

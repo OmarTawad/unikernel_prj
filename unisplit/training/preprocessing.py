@@ -32,17 +32,17 @@ DEFAULT_CHUNK_SIZE = 50_000
 
 
 def discover_raw_csvs(raw_dir: str | Path) -> list[Path]:
-    """Find all CSV files in the raw data directory."""
+    """Find all CSV files in the raw data directory (recursively)."""
     raw_dir = Path(raw_dir)
     if not raw_dir.exists():
         raise FileNotFoundError(
             f"Raw data directory not found: {raw_dir}\n"
             "Run `make download-data` or manually place CSV files there."
         )
-    csvs = sorted(raw_dir.glob("*.csv"))
+    csvs = sorted(raw_dir.rglob("*.csv"))
     if not csvs:
         raise FileNotFoundError(
-            f"No CSV files found in {raw_dir}\n"
+            f"No CSV files found in {raw_dir} or its subdirectories.\n"
             "Place CIC-IoT2023 CSV files in this directory."
         )
     logger.info(f"Found {len(csvs)} CSV files in {raw_dir}")
@@ -93,6 +93,17 @@ def _build_label_map(class_names: list[str] | None) -> dict[str, int]:
     return {name: idx for idx, name in enumerate(names)}
 
 
+def _infer_label_from_path(csv_path: Path) -> str:
+    """Infer the class label from the parent directory name if the column is missing."""
+    name = csv_path.parent.name
+    if name == "Benign_Final":
+        return "Benign"
+    if name == "DDoS-PSHACK_FLOOD":
+        return "DDoS-PSHACK_Flood"
+    if name == "DDoS-RSTFINFLOOD":
+        return "DDoS-RSTFINFlood"
+    return name
+
 # ──────────────────────────────────────────────────────────────────────
 # Pass 1: Count rows and validate structure
 # ──────────────────────────────────────────────────────────────────────
@@ -130,12 +141,13 @@ def _pass1_count(
                 resolved_cols = _resolve_feature_columns(chunk, feature_columns, label_column)
                 logger.info(f"  Resolved {len(resolved_cols)} feature columns from {csv_path.name}")
 
-            if label_column not in chunk.columns:
-                logger.warning(f"  No '{label_column}' column in {csv_path.name}, skipping file")
-                break
+            if label_column in chunk.columns:
+                labels_raw = chunk[label_column].astype(str).str.strip()
+            else:
+                inferred = _infer_label_from_path(csv_path)
+                labels_raw = pd.Series([inferred] * len(chunk), index=chunk.index)
 
             # Count valid rows (label exists in label_map)
-            labels_raw = chunk[label_column].astype(str).str.strip()
             valid = labels_raw.isin(label_map)
             valid_count = int(valid.sum())
             file_rows += valid_count
@@ -216,10 +228,12 @@ def _pass2_write(
 
         file_written = 0
         for chunk in reader:
-            if label_column not in chunk.columns:
-                break
+            if label_column in chunk.columns:
+                labels_raw = chunk[label_column].astype(str).str.strip()
+            else:
+                inferred = _infer_label_from_path(csv_path)
+                labels_raw = pd.Series([inferred] * len(chunk), index=chunk.index)
 
-            labels_raw = chunk[label_column].astype(str).str.strip()
             valid_mask = labels_raw.isin(label_map)
             if not valid_mask.any():
                 continue
