@@ -1,5 +1,6 @@
 """Shared test fixtures for UniSplit tests."""
 
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import pytest
 import torch
 
 from unisplit.model.cnn import IoTCNN
+from unisplit.edge_native import export_edge_k7_to_c
 from unisplit.shared.config import UniSplitConfig, load_config
 from unisplit.shared.constants import NUM_CLASSES, NUM_FEATURES, SUPPORTED_SPLIT_IDS
 
@@ -49,3 +51,40 @@ def tmp_dir():
     """Create a temporary directory for test outputs."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)
+
+
+@pytest.fixture(scope="session")
+def repo_root() -> Path:
+    """Path to repository root."""
+    return Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(scope="session")
+def c_runtime_build_dir(repo_root: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Configure and build edge-native C runtime once per test session."""
+    build_dir = tmp_path_factory.mktemp("edge_runtime_build")
+
+    subprocess.run(
+        ["cmake", "-S", str(repo_root / "edge_native/runtime"), "-B", str(build_dir)],
+        check=True,
+    )
+    subprocess.run(
+        ["cmake", "--build", str(build_dir), "-j"],
+        check=True,
+    )
+
+    return build_dir
+
+
+@pytest.fixture
+def edge_k7_c_artifacts(tmp_dir: Path) -> Path:
+    """Export split-7 C artifacts into a temporary directory."""
+    export_edge_k7_to_c(
+        partitions_dir="partitions",
+        out_dir=tmp_dir,
+        model_version="v0.1.0",
+        source_checkpoint="checkpoints/best.pt",
+        eps=1e-5,
+        export_reference=True,
+    )
+    return tmp_dir

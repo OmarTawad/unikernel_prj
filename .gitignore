@@ -51,6 +51,8 @@ htmlcov/
 # Unikraft build artifacts
 edge_native/**/.unikraft/
 edge_native/**/.config.*
+edge_native/runtime/build/
+edge_native/artifacts/edge_k7_c/
 
 
 latex.txt
