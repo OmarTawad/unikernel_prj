@@ -1,0 +1,7 @@
+specification: "0.5"
+name: unisplit-uk-hello
+unikraft:
+  version: stable
+targets:
+  - architecture: arm64
+    platform: qemu

@@ -48,6 +48,10 @@ deploy/*.log
 htmlcov/
 .coverage
 
+# Unikraft build artifacts
+edge_native/**/.unikraft/
+edge_native/**/.config.*
+
 
 latex.txt
 

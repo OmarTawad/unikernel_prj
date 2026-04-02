@@ -9,7 +9,7 @@ description = "Memory-Constrained Adaptive Split Inference for Edge-Cloud IoT An
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
-authors = [{name = "UniSplit Authors"}]
+authors = [{name = "Omar Awad"}]
 
 dependencies = [
     "torch>=2.1.0",

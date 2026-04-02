@@ -7,6 +7,7 @@ PYTEST := $(VENV)/bin/pytest
 .PHONY: help install test dry-run preprocess-data train train-resume validate test-model \
         export-partitions profile-memory run-cloud run-edge smoke-test \
         docker-build docker-up docker-down docker-logs clean
+.PHONY: uk-check uk-build uk-run uk-validate
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -86,6 +87,26 @@ docker-down: ## Stop Docker services
 
 docker-logs: ## Follow Docker logs
 	docker compose -f deploy/docker-compose.yml logs -f
+
+# ── Unikraft / QEMU ARM64 Validation (T01) ─────────────
+
+uk-check: ## Check Unikraft/QEMU ARM64 validation prerequisites
+	@command -v qemu-system-aarch64 >/dev/null || (echo "Missing qemu-system-aarch64" && exit 1)
+	@command -v aarch64-linux-gnu-gcc >/dev/null || (echo "Missing aarch64-linux-gnu-gcc" && exit 1)
+	@command -v kraft >/dev/null || (echo "Missing kraft (install via https://get.kraftkit.sh)" && exit 1)
+	@command -v flex >/dev/null || (echo "Missing flex (install: apt-get install flex)" && exit 1)
+	@command -v bison >/dev/null || (echo "Missing bison (install: apt-get install bison)" && exit 1)
+	@command -v socat >/dev/null || (echo "Missing socat (install: apt-get install socat)" && exit 1)
+	@qemu-system-aarch64 -accel help
+
+uk-build: ## Build ARM64 Unikraft hello target
+	kraft --no-prompt --log-type basic build --plat qemu --arch arm64 edge_native/unikraft_hello
+
+uk-run: ## Run ARM64 Unikraft hello on QEMU (TCG emulation)
+	timeout 30s kraft --no-prompt --log-type basic run --plat qemu --arch arm64 --disable-acceleration edge_native/unikraft_hello
+
+uk-validate: ## Full T01 validation flow
+	bash scripts/validate_t01_unikraft_qemu.sh
 
 # ── Cleanup ────────────────────────────────────────────
 
