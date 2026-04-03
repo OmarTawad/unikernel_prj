@@ -1,10 +1,9 @@
 #include "cloud_client.h"
 #include "model_k7.h"
 #include "tensor.h"
-#include "transport.h"
+#include "transport_backend.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 static void usage(const char *prog)
@@ -13,42 +12,6 @@ static void usage(const char *prog)
             "Usage: %s [--artifacts-dir DIR] [--input-bin FILE] [--dump-activation FILE]\\n"
             "          [--post] [--cloud-url URL] [--model-version VER] [--no-quant]\\n",
             prog);
-}
-
-static int parse_http_url(const char *url, char *host, size_t host_size, int *port)
-{
-    const char *prefix = "http://";
-    const char *p;
-    const char *colon;
-
-    if (!url || !host || !port) {
-        return -1;
-    }
-
-    if (strncmp(url, prefix, strlen(prefix)) != 0) {
-        return -1;
-    }
-
-    p = url + strlen(prefix);
-    colon = strrchr(p, ':');
-    if (!colon) {
-        snprintf(host, host_size, "%s", p);
-        *port = 80;
-        return 0;
-    }
-
-    if ((size_t) (colon - p) >= host_size) {
-        return -1;
-    }
-
-    memcpy(host, p, (size_t) (colon - p));
-    host[colon - p] = '\0';
-    *port = atoi(colon + 1);
-    if (*port <= 0) {
-        return -1;
-    }
-
-    return 0;
 }
 
 int main(int argc, char **argv)
@@ -119,20 +82,16 @@ int main(int argc, char **argv)
     }
 
     if (do_post) {
-        char host[256];
-        int port = 0;
-        transport_cfg_t transport;
+        transport_client_t transport;
         cloud_infer_result_t result;
+        int created = 0;
 
-        if (parse_http_url(cloud_url, host, sizeof(host), &port) != 0) {
-            fprintf(stderr, "Invalid --cloud-url (expected http://host:port): %s\\n", cloud_url);
+        if (transport_posix_create(cloud_url, 10, &transport, err, sizeof(err)) != 0) {
+            fprintf(stderr, "Transport init failed: %s\\n", err);
             model_k7_free(&model);
             return 1;
         }
-
-        transport.host = host;
-        transport.port = port;
-        transport.timeout_seconds = 10;
+        created = 1;
 
         if (cloud_client_send_split_k7(
                 &transport,
@@ -143,6 +102,9 @@ int main(int argc, char **argv)
                 err,
                 sizeof(err)) != 0) {
             fprintf(stderr, "Cloud request failed: %s\\n", err);
+            if (created) {
+                transport_client_destroy(&transport);
+            }
             model_k7_free(&model);
             return 1;
         }
@@ -152,6 +114,9 @@ int main(int argc, char **argv)
                result.predicted_class,
                result.predicted_label,
                result.timing_total_ms);
+        if (created) {
+            transport_client_destroy(&transport);
+        }
     }
 
     model_k7_free(&model);

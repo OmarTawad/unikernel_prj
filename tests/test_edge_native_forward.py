@@ -14,7 +14,7 @@ def test_c_forward_matches_exported_reference(c_runtime_build_dir: Path, edge_k7
     assert binary.exists()
 
     input_path = edge_k7_c_artifacts / "reference_input.bin"
-    expected_path = edge_k7_c_artifacts / "reference_activation_k7.bin"
+    expected_path = edge_k7_c_artifacts / "reference_activation.bin"
     output_path = edge_k7_c_artifacts / "c_forward_output.bin"
 
     subprocess.run(

@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 import torch
 
+from unisplit.edge_native import export_all_edge_splits_to_c, export_edge_k7_to_c
 from unisplit.model.cnn import IoTCNN
-from unisplit.edge_native import export_edge_k7_to_c
 from unisplit.shared.config import UniSplitConfig, load_config
 from unisplit.shared.constants import NUM_CLASSES, NUM_FEATURES, SUPPORTED_SPLIT_IDS
 
@@ -88,3 +88,18 @@ def edge_k7_c_artifacts(tmp_dir: Path) -> Path:
         export_reference=True,
     )
     return tmp_dir
+
+
+@pytest.fixture(scope="session")
+def edge_c_splits_artifacts(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Export all supported split artifacts for the generic C runtime."""
+    out_root = tmp_path_factory.mktemp("edge_c_splits")
+    export_all_edge_splits_to_c(
+        partitions_dir="partitions",
+        out_root_dir=out_root,
+        model_version="v0.1.0",
+        source_checkpoint="checkpoints/best.pt",
+        eps=1e-5,
+        export_reference=True,
+    )
+    return out_root

@@ -1,34 +1,41 @@
-# Edge-Native Runtime (T02a, VPS/QEMU Correctness)
+# Edge-Native Runtime (Multi-Split, VPS/QEMU Correctness)
 
-This stage adds a practical split-7 edge-native path that is executable on VPS
-now and portable to Raspberry Pi later.
+This stage extends the original split-7 vertical slice into a reusable
+edge-native runtime architecture across all supported split IDs
+`{0,3,6,7,8,9}`.
 
 ## What This Adds
 
-- Python export from `partitions/edge_k7/partition.pt` to C-friendly artifacts
-- Plain-C split-7 forward path:
-  - Conv1D -> BatchNorm -> ReLU -> Conv1D -> BatchNorm -> ReLU -> GlobalAvgPool
+- Python export from `partitions/edge_k*` to C-friendly artifacts for all splits
+- Plain-C multi-split forward path:
+  - `k0`: passthrough input
+  - `k3`: block1
+  - `k6`: block2
+  - `k7`: global average pool
+  - `k8`: fc1 + relu
+  - `k9`: logits
 - Symmetric int8 quantization in C (matching Python contract)
-- Real host-side HTTP POST to cloud `/infer/split`
-- Tests for export correctness, forward parity, quant parity, and cloud roundtrip
+- Generic host-side HTTP POST to cloud `/infer/split` with pluggable transport backend
+- C-side LinUCB controller scaffolding with synthetic sanity tests
+- Tests for export correctness, multi-split forward parity, quant parity, and cloud roundtrip
 
 ## Artifact Format
 
-Export command:
+Export all splits:
 
 ```bash
-make export-edge-c
+make export-edge-c-all
 ```
 
-Output directory: `edge_native/artifacts/edge_k7_c/`
+Output root: `edge_native/artifacts/c_splits/`
 
-Files:
+Per split directory: `edge_native/artifacts/c_splits/edge_k{split_id}/`
 
 - `manifest.json` (schema + split metadata + tensor descriptors + eps)
 - Tensor binaries (`*.bin`) as little-endian float32
 - Optional deterministic references:
   - `reference_input.bin`
-  - `reference_activation_k7.bin`
+  - `reference_activation.bin`
 
 The C runtime does not parse `.pt` files.
 
@@ -38,40 +45,53 @@ The C runtime does not parse `.pt` files.
 # Build C runtime and test binaries
 make c-edge-build
 
-# Export + forward/export checks
+# Export + forward checks for legacy k7 path
 make c-edge-forward-verify
+
+# Export + forward checks for all supported splits
+make c-edge-forward-verify-all
 
 # Quantization parity
 make c-edge-quant-verify
 
-# End-to-end host-side POST /infer/split
+# C controller/LinUCB sanity checks
+make c-edge-controller-verify
+
+# End-to-end host-side POST /infer/split (k7 compatibility path)
 make c-edge-roundtrip
+
+# End-to-end host-side POST /infer/split (generic multi-split path)
+make c-edge-roundtrip-generic
 ```
 
 ## Transport Architecture
 
-`transport.h` defines a narrow transport contract:
+`transport_backend.h` defines a backend-pluggable transport client:
 
-- `transport_post_json(const transport_cfg_t*, const char* path, const char* req_json, char** resp_json_out)`
+- `transport_client_t` with function pointers (`post_json`, `destroy`)
+- `transport_posix_create(...)` for current host-side implementation
+- `transport_client_post_json(...)` for cloud client use
 
-Current implementation uses POSIX sockets over HTTP/1.1 (`Connection: close`).
+Current implementation uses POSIX sockets over HTTP/1.1.
 
 Later migration path on Pi/Unikraft:
 
-- keep model/export/quantization unchanged
-- replace only transport implementation with lwIP/Unikraft network path
+- keep model/export/runtime/quantization unchanged
+- replace only transport backend implementation with lwIP/Unikraft path
 
 ## Raspberry Pi Transition Notes
 
 Ready now for Pi transition:
 
-- C artifact format
-- C split-7 forward path
+- C artifact format for all supported splits
+- C multi-split forward path and split dispatch
 - cloud JSON contract compatibility
+- transport backend abstraction
+- C controller scaffolding hooks
 
 Still deferred to Pi hardware stage:
 
 - PMU (`lib-pmu`) real counters
 - NEON optimization and performance tuning
-- lwIP runtime replacement and MQTT ingestion path
+- lwIP transport backend replacement and MQTT ingestion path
 - INA219 and board-specific instrumentation

@@ -8,7 +8,7 @@ PYTEST := $(VENV)/bin/pytest
         export-partitions profile-memory run-cloud run-edge smoke-test \
         docker-build docker-up docker-down docker-logs clean
 .PHONY: uk-check uk-build uk-run uk-validate
-.PHONY: export-edge-c c-edge-build c-edge-forward-verify c-edge-quant-verify c-edge-roundtrip
+.PHONY: export-edge-c export-edge-c-all c-edge-build c-edge-forward-verify c-edge-forward-verify-all c-edge-quant-verify c-edge-controller-verify c-edge-roundtrip c-edge-roundtrip-generic
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -112,7 +112,10 @@ uk-validate: ## Full T01 validation flow
 # ── Edge-Native Runtime (T02a) ──────────────────────────
 
 export-edge-c: ## Export split-7 edge artifacts for C runtime
-	$(PYTHON) scripts/export_edge_c_artifacts.py --partitions-dir partitions --out-dir edge_native/artifacts/edge_k7_c --model-version v0.1.0 --source-checkpoint checkpoints/best.pt
+	$(PYTHON) scripts/export_edge_c_artifacts.py --partitions-dir partitions --split-id 7 --out-dir edge_native/artifacts/edge_k7_c --model-version v0.1.0 --source-checkpoint checkpoints/best.pt
+
+export-edge-c-all: ## Export all supported edge splits for C runtime
+	$(PYTHON) scripts/export_edge_c_artifacts.py --all --partitions-dir partitions --out-root-dir edge_native/artifacts/c_splits --model-version v0.1.0 --source-checkpoint checkpoints/best.pt
 
 c-edge-build: ## Configure and build edge-native C runtime/test binaries
 	cmake -S edge_native/runtime -B edge_native/runtime/build
@@ -121,11 +124,20 @@ c-edge-build: ## Configure and build edge-native C runtime/test binaries
 c-edge-forward-verify: ## Run export + C forward correctness tests
 	$(PYTEST) tests/test_edge_native_export.py tests/test_edge_native_forward.py -v --tb=short
 
+c-edge-forward-verify-all: ## Run multi-split C forward correctness tests
+	$(PYTEST) tests/test_edge_native_export.py tests/test_edge_native_forward.py tests/test_edge_native_forward_multi.py -v --tb=short
+
 c-edge-quant-verify: ## Run C/Python quantization parity test
 	$(PYTEST) tests/test_edge_native_quant.py -v --tb=short
 
+c-edge-controller-verify: ## Run C controller/LinUCB sanity tests
+	$(PYTEST) tests/test_edge_native_controller.py -v --tb=short
+
 c-edge-roundtrip: ## Run host-side C cloud /infer/split roundtrip test
 	$(PYTEST) tests/test_edge_native_cloud_roundtrip.py -v --tb=short
+
+c-edge-roundtrip-generic: ## Run generic multi-split C cloud /infer/split roundtrip test
+	$(PYTEST) tests/test_edge_native_cloud_roundtrip_generic.py -v --tb=short
 
 # ── Cleanup ────────────────────────────────────────────
 

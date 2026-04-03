@@ -53,6 +53,7 @@ edge_native/**/.unikraft/
 edge_native/**/.config.*
 edge_native/runtime/build/
 edge_native/artifacts/edge_k7_c/
+edge_native/artifacts/c_splits/
 
 
 latex.txt

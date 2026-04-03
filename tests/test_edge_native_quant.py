@@ -4,16 +4,18 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from unisplit.shared.quantization import quantize_int8
 
 
-def test_c_quantization_matches_python(c_runtime_build_dir: Path, tmp_dir: Path):
+@pytest.mark.parametrize("length", [64, 128, 2496])
+def test_c_quantization_matches_python(c_runtime_build_dir: Path, tmp_dir: Path, length: int):
     binary = c_runtime_build_dir / "unisplit_edge_k7_quant_testbin"
     assert binary.exists()
 
     rng = np.random.default_rng(123)
-    x = rng.normal(loc=0.0, scale=1.25, size=64).astype(np.float32)
+    x = rng.normal(loc=0.0, scale=1.25, size=length).astype(np.float32)
 
     in_path = tmp_dir / "quant_input.bin"
     out_i8_path = tmp_dir / "quant_output.bin"

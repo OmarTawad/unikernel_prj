@@ -26,5 +26,13 @@ void layer_batchnorm_eval(
 
 void layer_relu(const float *input, int len, float *output);
 void layer_global_avgpool(const float *input, int channels, int len, float *output);
+void layer_linear(
+    const float *input,
+    int in_features,
+    const float *weight,
+    const float *bias,
+    int out_features,
+    float *output
+);
 
 #endif
