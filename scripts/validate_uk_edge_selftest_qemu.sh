@@ -18,6 +18,9 @@ need_cmd() {
 need_cmd qemu-system-aarch64
 need_cmd kraft
 
+echo "[prep] Regenerating embedded model source..."
+make -C "${ROOT_DIR}" uk-edge-embed-artifacts >/dev/null
+
 echo "[build] Building Unikraft edge selftest for qemu/arm64..."
 kraft --no-prompt --log-type basic clean --proper "${APP_DIR}"
 kraft --no-prompt --log-type basic build --plat qemu --arch arm64 "${APP_DIR}"
@@ -35,13 +38,23 @@ if [[ ${RC} -ne 0 && ${RC} -ne 124 ]]; then
 fi
 
 required_markers=(
+  "PI_MARKER_BOOT_START"
+  "PI_MARKER_ARTIFACT_STRATEGY=embedded_edge_k9_superset_v1"
+  "PI_MARKER_CONFIG_OK"
   "UK_SELFTEST_EDGE_OK"
   "UK_SELFTEST_SPLIT_OK split=3"
   "UK_SELFTEST_SPLIT_OK split=7"
   "UK_SELFTEST_SPLIT_OK split=8"
+  "PI_MARKER_SPLIT_DISPATCH_OK split=7"
+  "PI_MARKER_CONTROLLER_OK"
   "UK_SELFTEST_CTRL_OK"
+  "PI_MARKER_BACKEND_INIT_OK backend=ukstub"
+  "PI_MARKER_NETWORK_READY backend=ukstub"
+  "PI_MARKER_INFER_ATTEMPT split=7"
+  "PI_MARKER_INFER_RESPONSE_OK split=7"
   "UK_SELFTEST_TRANSPORT=ukstub"
   "UK_SELFTEST_TRANSPORT_OK"
+  "PI_MARKER_FINAL_SUCCESS"
   "UK_SELFTEST_DONE"
 )
 

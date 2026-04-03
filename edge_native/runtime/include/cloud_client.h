@@ -26,6 +26,21 @@ int cloud_client_send_split(
     size_t err_size
 );
 
+int cloud_client_send_split_to_path(
+    transport_client_t *transport,
+    const char *path,
+    int split_id,
+    const float *activation,
+    size_t activation_len,
+    const int *shape,
+    size_t shape_len,
+    int use_quantization,
+    const char *model_version,
+    cloud_infer_result_t *out,
+    char *err,
+    size_t err_size
+);
+
 int cloud_client_send_split_k7(
     transport_client_t *transport,
     const float activation[64],

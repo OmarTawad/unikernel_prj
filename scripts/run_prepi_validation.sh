@@ -35,6 +35,8 @@ run_step "Controller sanity checks" "make c-edge-controller-verify"
 run_step "Failure-path hardening checks" "make c-edge-failure-verify"
 run_step "VPS roundtrip matrix evidence" "make c-edge-roundtrip-vps"
 run_step "Unikraft edge selftest validation" "make uk-edge-validate"
+run_step "Pi image candidate build" "make pi-image-build"
+run_step "Pi boot-media layout prep" "make pi-boot-media"
 
 echo "============================================================" | tee -a "${REPORT}"
 echo "[PASS] prepi-validate complete" | tee -a "${REPORT}"

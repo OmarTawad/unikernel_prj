@@ -1,7 +1,9 @@
 #include "cloud_client.h"
 
 #include "base64.h"
+#ifndef UNISPLIT_NO_QUANTIZE
 #include "quantize.h"
+#endif
 
 #include <stdint.h>
 #include <stdio.h>
@@ -89,6 +91,11 @@ static int json_extract_float(const char *json, const char *key, float *out)
 {
     char pattern[64];
     const char *p;
+    int sign = 1;
+    long int_part = 0;
+    float frac_part = 0.0f;
+    float scale = 0.1f;
+    int saw_digit = 0;
 
     snprintf(pattern, sizeof(pattern), "\"%s\"", key);
     p = strstr(json, pattern);
@@ -99,7 +106,36 @@ static int json_extract_float(const char *json, const char *key, float *out)
     if (!p) {
         return -1;
     }
-    *out = strtof(p + 1, NULL);
+
+    p++;
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+    if (*p == '-') {
+        sign = -1;
+        p++;
+    } else if (*p == '+') {
+        p++;
+    }
+
+    while (*p >= '0' && *p <= '9') {
+        saw_digit = 1;
+        int_part = int_part * 10 + (long) (*p - '0');
+        p++;
+    }
+    if (*p == '.') {
+        p++;
+        while (*p >= '0' && *p <= '9') {
+            saw_digit = 1;
+            frac_part += (float) (*p - '0') * scale;
+            scale *= 0.1f;
+            p++;
+        }
+    }
+    if (!saw_digit) {
+        return -1;
+    }
+    *out = (float) sign * ((float) int_part + frac_part);
     return 0;
 }
 
@@ -134,8 +170,9 @@ static int append_shape_json(char *dst, size_t cap, const int *shape, size_t sha
     return 0;
 }
 
-int cloud_client_send_split(
+int cloud_client_send_split_to_path(
     transport_client_t *transport,
+    const char *path,
     int split_id,
     const float *activation,
     size_t activation_len,
@@ -161,8 +198,8 @@ int cloud_client_send_split(
     char *resp_json = NULL;
     int rc = -1;
 
-    if (!transport || !activation || activation_len == 0 || !shape || shape_len == 0 || !model_version || !out) {
-        set_error(err, err_size, "Invalid args to cloud_client_send_split");
+    if (!transport || !path || !activation || activation_len == 0 || !shape || shape_len == 0 || !model_version || !out) {
+        set_error(err, err_size, "Invalid args to cloud_client_send_split_to_path");
         return -1;
     }
     if (append_shape_json(shape_json, sizeof(shape_json), shape, shape_len) != 0) {
@@ -171,17 +208,26 @@ int cloud_client_send_split(
     }
 
     memset(out, 0, sizeof(*out));
+#ifdef UNISPLIT_NO_QUANTIZE
+    if (use_quantization) {
+        set_error(err, err_size, "Quantization disabled in this build");
+        return -1;
+    }
+#endif
+
     if (use_quantization) {
         qbuf = (int8_t *) malloc(sizeof(int8_t) * activation_len);
         if (!qbuf) {
             set_error(err, err_size, "Out of memory for quantization");
             return -1;
         }
+#ifndef UNISPLIT_NO_QUANTIZE
         if (quantize_int8_symmetric(activation, activation_len, qbuf, &scale) != 0) {
             free(qbuf);
             set_error(err, err_size, "Quantization failed");
             return -1;
         }
+#endif
         payload_bytes = (const uint8_t *) qbuf;
         payload_len = activation_len;
     } else {
@@ -238,8 +284,8 @@ int cloud_client_send_split(
         );
     }
 
-    if (transport_client_post_json(transport, "/infer/split", req_json, &resp_json) != 0) {
-        set_error(err, err_size, "HTTP POST /infer/split failed");
+    if (transport_client_post_json(transport, path, req_json, &resp_json) != 0) {
+        set_error(err, err_size, "HTTP POST failed");
         goto cleanup;
     }
 
@@ -272,6 +318,36 @@ cleanup:
     free(req_json);
     transport_response_free(resp_json);
     return rc;
+}
+
+int cloud_client_send_split(
+    transport_client_t *transport,
+    int split_id,
+    const float *activation,
+    size_t activation_len,
+    const int *shape,
+    size_t shape_len,
+    int use_quantization,
+    const char *model_version,
+    cloud_infer_result_t *out,
+    char *err,
+    size_t err_size
+)
+{
+    return cloud_client_send_split_to_path(
+        transport,
+        "/infer/split",
+        split_id,
+        activation,
+        activation_len,
+        shape,
+        shape_len,
+        use_quantization,
+        model_version,
+        out,
+        err,
+        err_size
+    );
 }
 
 int cloud_client_send_split_k7(

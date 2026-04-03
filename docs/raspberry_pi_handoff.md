@@ -1,11 +1,10 @@
-# Raspberry Pi Handoff (Pre-Hardware Freeze)
+# Raspberry Pi Handoff (Final Pre-Hardware Package)
 
-This document freezes what belongs on VPS, what belongs in the Pi phase, and
-what is still blocked on hardware-only work.
+This document freezes the exact handoff package and day-1 bring-up order.
 
 ## 1) VPS-Only Paths
 
-- Cloud service + deploy:
+- Cloud service and deploy:
   - `unisplit/cloud/`
   - `deploy/docker-compose.yml`
   - `deploy/Dockerfile.cloud`
@@ -17,93 +16,122 @@ what is still blocked on hardware-only work.
   - `data/`
   - `checkpoints/`
   - `profiles/`
-- Python edge simulator:
+- Python simulator + historical evidence:
   - `unisplit/edge/`
   - `configs/edge.yaml`
-  - `deploy/Dockerfile.edge`
-- PyTorch partition sources:
-  - `partitions/edge_k*/partition.pt`
-  - `partitions/cloud_k*/partition.pt`
-  - `partitions/*/metadata.json`
-- VPS evidence/logs:
   - `artifacts/roundtrip/latest/`
   - `artifacts/prepi/`
   - `artifacts/qemu/`
 
 ## 2) Pi-Phase Required Paths
 
-- Edge-native runtime:
+- Edge-native runtime + transport abstraction:
   - `edge_native/runtime/include/`
   - `edge_native/runtime/src/`
-  - `edge_native/runtime/CMakeLists.txt`
-- Transport abstraction + backend selection:
-  - `edge_native/runtime/include/transport_backend.h`
-  - `edge_native/runtime/src/transport_backend_factory.c`
-  - `edge_native/runtime/src/transport_common.c`
-  - `edge_native/runtime/src/transport_lwip_backend_stub.c`
-- Unikraft app skeleton:
+- Unikraft runtime app:
   - `edge_native/unikraft_edge_selftest/`
-  - Optional sanity app: `edge_native/unikraft_hello/`
-- C export artifacts (deploy payload candidates):
-  - `edge_native/artifacts/c_splits/edge_k{0,3,6,7,8,9}/manifest.json`
-  - `edge_native/artifacts/c_splits/edge_k{0,3,6,7,8,9}/*.bin`
+  - `edge_native/unikraft_edge_selftest/generated/embedded_model.c`
+  - `edge_native/unikraft_edge_selftest/generated/embedded_model.h`
+- C artifact exports:
+  - `edge_native/artifacts/c_splits/edge_k{0,3,6,7,8,9}/`
+- Pi build/boot configs:
+  - `configs/pi_edge_runtime.env.example`
+  - `configs/pi_boot/config.txt`
+  - `configs/pi_boot/cmdline.txt.template`
+- Handoff/build scripts:
+  - `scripts/generate_embedded_edge_model.py`
+  - `scripts/build_pi_image.sh`
+  - `scripts/prepare_pi_boot_media.sh`
+  - `scripts/check_pi_readiness.sh`
 - Contracts/checklists:
   - `docs/protocol.md`
   - `docs/edge_native_runtime.md`
   - `docs/pre_pi_validation_checklist.md`
-  - `docs/unikraft_qemu_validation.md`
-  - `configs/pi_edge_runtime.env.example`
-- Build/export entrypoints:
-  - `Makefile` (`export-edge-c-all`, `c-edge-build`, `uk-edge-validate`, `prepi-validate`)
-  - `scripts/export_edge_c_artifacts.py`
-  - `unisplit/edge_native/export_c.py`
 
-## 3) Generated During Build/Deploy
+## 3) Locked Artifact Strategy
 
-- Host runtime binaries:
-  - `edge_native/runtime/build/unisplit_edge_cli`
-  - `edge_native/runtime/build/unisplit_edge_k7_cli`
-  - `edge_native/runtime/build/unisplit_edge_*testbin`
-- Unikraft QEMU outputs:
-  - `edge_native/unikraft_edge_selftest/.unikraft/build/unisplit-uk-edge-selftest_qemu-arm64`
-  - `.../unisplit-uk-edge-selftest_qemu-arm64.dbg`
-  - `.../unisplit-uk-edge-selftest_qemu-arm64.bootinfo`
-- Validation artifacts:
-  - `artifacts/roundtrip/latest/{summary.json,cloud.log,split_k3.log,split_k7.log,split_k8.log}`
-  - `artifacts/qemu/unikraft_edge_selftest_arm64.log`
-  - `artifacts/prepi/validation_report.txt`
+**Embedded model strategy is final for day-1 Pi bring-up.**
 
-## 4) Network Readiness (Strict)
+- Export source: `edge_native/artifacts/c_splits/edge_k9/` (superset tensors)
+- Generator: `scripts/generate_embedded_edge_model.py`
+- Embedded model loaded in unikernel by `edge_model_load_embedded(...)`
 
-Implemented now:
-- Backend-pluggable transport API (`transport_client_t` + factory)
-- Host `posix` backend (`HTTP/1.1` POST `/infer/split`)
-- `ukstub` deterministic backend for integration/self-test
-- Cloud wire contract preserved (`split_id`, base64 payload, `shape`, `dtype`, quant params, `model_version`)
+No runtime filesystem dependency is required for inference tensors on day-1.
 
-Not production yet:
-- `lwip` backend is currently a stub returning explicit not-implemented error.
-- Unikraft selftest app uses `ukstub`, not real network I/O to VPS.
+## 4) Image Build and Boot-Media Mapping
 
-Still required before Pi can communicate with VPS:
-- Real Unikraft/lwIP backend implementation under existing transport interface.
-- Pi endpoint config wiring in runtime startup path (`backend`, `endpoint`, timeout policy).
-- Real artifact-loading strategy in unikernel path (manifest/bin loader or embedding pipeline).
-- Pi platform target selection in Kraftfile (current targets are `qemu/arm64`).
+### Build image candidate
 
-## 5) Day-1 Pi Arrival Checklist
+```bash
+make pi-image-build
+```
 
-1. Confirm VPS cloud endpoint (`/health`, `/ready`) from Pi network.
-2. Regenerate artifacts on VPS: `make export-edge-c-all`.
-3. Generate handoff manifest: `make pi-readiness-manifest`.
-4. Build payload tarball: `make pi-boot-payload`.
-5. Build Pi-target unikernel image from `edge_native/unikraft_edge_selftest` (after Pi platform target is set).
-6. Boot on Pi and capture serial log with current selftest markers.
-7. Swap backend from `ukstub` to real `lwip` backend and run first `/infer/split` call (`k7`, then `k3`, `k8`).
-8. Save boot + roundtrip logs and compare against pre-Pi baseline markers.
+Outputs:
+- `artifacts/pi_handoff/latest/images/kernel8.img`
+- `artifacts/pi_handoff/latest/images/image_build_metadata.txt`
+- `artifacts/pi_handoff/latest/images/unisplit-uk-edge-selftest_<plat>-arm64.img`
 
-## 6) Current Blockers (Pre-Hardware Repo Work)
+### Prepare boot-media layout
 
-- Add Pi platform target in Kraftfile(s).
-- Replace `transport_lwip_backend_stub.c` with real implementation.
-- Add runtime artifact-loading path for unikernel (manifest/bin).
+```bash
+make pi-boot-media
+```
+
+Outputs:
+- `artifacts/pi_handoff/latest/boot_media/boot/kernel8.img`
+- `artifacts/pi_handoff/latest/boot_media/boot/config.txt`
+- `artifacts/pi_handoff/latest/boot_media/boot/cmdline.txt`
+- `artifacts/pi_handoff/latest/boot_media/BOOT_MEDIA_README.txt`
+- `artifacts/pi_handoff/latest/boot_media/boot_media_manifest.txt`
+
+Copy the three files under `boot/` into the FAT32 Pi boot partition.
+
+## 5) Runtime Config Ingestion Path
+
+The unikernel app consumes boot cmdline arguments for:
+- backend selection
+- endpoint host:port
+- request path
+- split ID
+- timeout
+- retries
+
+Rendered source values come from:
+- `configs/pi_edge_runtime.env.example`
+- `configs/pi_boot/cmdline.txt.template`
+
+## 6) Day-1 Serial Acceptance Markers
+
+Required markers on serial console:
+
+- `PI_MARKER_BOOT_START`
+- `PI_MARKER_ARTIFACT_STRATEGY=embedded_edge_k9_superset_v1`
+- `PI_MARKER_CONFIG_OK`
+- `PI_MARKER_SPLIT_DISPATCH_OK`
+- `PI_MARKER_BACKEND_INIT_OK`
+- `PI_MARKER_NETWORK_READY`
+- `PI_MARKER_INFER_ATTEMPT`
+- `PI_MARKER_INFER_RESPONSE_OK`
+- `PI_MARKER_FINAL_SUCCESS`
+
+Any `*_FAIL` marker is an immediate day-1 stop condition.
+
+## 7) Day-1 Bring-Up Order
+
+1. On VPS: verify cloud `/health` and `/ready`.
+2. Run `make prepi-validate` on VPS.
+3. Run `make pi-image-build`.
+4. Run `make pi-boot-media`.
+5. Copy `boot/{kernel8.img,config.txt,cmdline.txt}` to Pi boot partition.
+6. Connect UART + Ethernet, power on Pi, capture serial log.
+7. Confirm required markers through `PI_MARKER_NETWORK_READY`.
+8. Confirm first real `/infer/split` success (`PI_MARKER_INFER_RESPONSE_OK`).
+9. Archive serial logs under `artifacts/pi_handoff/` for comparison.
+
+## 8) Still Hardware-Only
+
+- PMU/lib-pmu validation
+- INA219 instrumentation
+- final on-device network behavior validation
+- NEON optimization and hardware timing claims
+- MQTT-on-device deployment validation

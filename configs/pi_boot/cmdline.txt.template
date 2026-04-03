@@ -1,0 +1,1 @@
+console=serial0,115200 console=tty1 root=/dev/ram0 rw -- --split-id ${UNISPLIT_EDGE_SPLIT_ID} --backend ${UNISPLIT_TRANSPORT_BACKEND} --endpoint ${UNISPLIT_TRANSPORT_ENDPOINT} --path ${UNISPLIT_TRANSPORT_PATH} --timeout ${UNISPLIT_TRANSPORT_TIMEOUT_SECONDS} --retries ${UNISPLIT_TRANSPORT_RETRIES}

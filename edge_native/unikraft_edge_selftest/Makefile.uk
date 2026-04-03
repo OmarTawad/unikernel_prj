@@ -1,12 +1,14 @@
 $(eval $(call addlib,appedgeselftest))
 
 CINCLUDES-y += -I$(APPEDGESELFTEST_BASE)/../runtime/include
-CFLAGS-y += -DUNISPLIT_NO_POSIX_BACKEND
+CINCLUDES-y += -I$(APPEDGESELFTEST_BASE)/generated
+CFLAGS-y += -DUNISPLIT_NO_POSIX_BACKEND -DUNISPLIT_NO_QUANTIZE
 
 APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/main.c
 
-# Reuse generic edge-native runtime sources (no host-only posix backend)
+# Reuse generic edge-native runtime sources with embedded artifacts.
 APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/edge_model_minimal.c
+APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/generated/embedded_model.c
 APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/../runtime/src/layers_conv1d.c
 APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/../runtime/src/layers_batchnorm.c
 APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/../runtime/src/layers_relu.c
@@ -14,7 +16,9 @@ APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/../runtime/src/layers_pool.c
 APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/../runtime/src/layers_linear.c
 APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/../runtime/src/edge_runtime.c
 APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/../runtime/src/controller.c
+APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/../runtime/src/base64.c
+APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/../runtime/src/cloud_client.c
 APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/../runtime/src/transport_common.c
 APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/../runtime/src/transport_ukstub_backend.c
-APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/../runtime/src/transport_lwip_backend_stub.c
+APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/../runtime/src/transport_lwip_backend.c
 APPEDGESELFTEST_SRCS-y += $(APPEDGESELFTEST_BASE)/../runtime/src/transport_backend_factory.c

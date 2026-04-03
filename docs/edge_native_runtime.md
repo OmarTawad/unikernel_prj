@@ -1,115 +1,90 @@
-# Edge-Native Runtime (Multi-Split, VPS/QEMU Correctness)
+# Edge-Native Runtime (Multi-Split, Pi-Ready Baseline)
 
-This stage extends the original split-7 vertical slice into a reusable
-edge-native runtime architecture across all supported split IDs
-`{0,3,6,7,8,9}`.
+This stage provides a correctness-first edge-native baseline that is reusable for
+QEMU validation now and Raspberry Pi bring-up later.
 
-## What This Adds
+## What Is Implemented
 
-- Python export from `partitions/edge_k*` to C-friendly artifacts for all splits
-- Plain-C multi-split forward path:
-  - `k0`: passthrough input
-  - `k3`: block1
-  - `k6`: block2
-  - `k7`: global average pool
-  - `k8`: fc1 + relu
-  - `k9`: logits
-- Symmetric int8 quantization in C (matching Python contract)
-- Generic host-side HTTP POST to cloud `/infer/split` with pluggable transport backend
-- Backend selection across `posix`, `ukstub`, and `lwip` (stub) transport backends
-- C-side LinUCB controller scaffolding with synthetic sanity tests
-- Tests for export correctness, multi-split forward parity, quant parity, and cloud roundtrip
+- Multi-split plain-C forward runtime for split IDs `{0,3,6,7,8,9}`
+- C-friendly artifact export (`manifest.json` + little-endian float32 `.bin`)
+- Cloud contract-preserving client for `/infer/split`
+- Backend-pluggable transport (`posix`, `ukstub`, `lwip`)
+- Deterministic Unikraft edge self-test app with serial acceptance markers
+- Pi handoff scripts for image candidate build + boot-media layout
 
-## Artifact Format
+## Locked Artifact Strategy
 
-Export all splits:
+**Strategy: embed exported tensors into the unikernel image at build time.**
 
-```bash
-make export-edge-c-all
-```
+- Source export remains `edge_native/artifacts/c_splits/edge_k9` (superset tensors).
+- Generator: `scripts/generate_embedded_edge_model.py`
+- Generated embedded model sources:
+  - `edge_native/unikraft_edge_selftest/generated/embedded_model.h`
+  - `edge_native/unikraft_edge_selftest/generated/embedded_model.c`
+- Runtime in unikernel uses embedded model loader (`edge_model_load_embedded`),
+  not host filesystem reads.
 
-Output root: `edge_native/artifacts/c_splits/`
-
-Per split directory: `edge_native/artifacts/c_splits/edge_k{split_id}/`
-
-- `manifest.json` (schema + split metadata + tensor descriptors + eps)
-- Tensor binaries (`*.bin`) as little-endian float32
-- Optional deterministic references:
-  - `reference_input.bin`
-  - `reference_activation.bin`
-
-The C runtime does not parse `.pt` files.
-
-## Build and Validate
-
-```bash
-# Build C runtime and test binaries
-make c-edge-build
-
-# Export + forward checks for legacy k7 path
-make c-edge-forward-verify
-
-# Export + forward checks for all supported splits
-make c-edge-forward-verify-all
-
-# Quantization parity
-make c-edge-quant-verify
-
-# C controller/LinUCB sanity checks
-make c-edge-controller-verify
-
-# Failure-path hardening checks
-make c-edge-failure-verify
-
-# End-to-end host-side POST /infer/split (k7 compatibility path)
-make c-edge-roundtrip
-
-# End-to-end host-side POST /infer/split (generic multi-split path)
-make c-edge-roundtrip-generic
-
-# VPS evidence-producing roundtrip matrix (k3/k7/k8)
-make c-edge-roundtrip-vps
-
-# Unikraft/QEMU edge-runtime selftest (generic runtime linked)
-make uk-edge-validate
-
-# Pi readiness helpers
-make pi-readiness-manifest
-make pi-readiness-check
-make pi-boot-payload
-```
+This avoids day-1 filesystem/initrd uncertainty on Pi and keeps bring-up focused
+on boot + network + protocol correctness.
 
 ## Transport Architecture
 
-`transport_backend.h` defines a backend-pluggable transport client:
+`transport_backend.h` exposes a backend-agnostic client API.
 
-- `transport_client_t` with function pointers (`post_json`, `destroy`)
-- `transport_posix_create(...)` for current host-side implementation
-- `transport_ukstub_create(...)` for deterministic Unikraft-oriented stub path
-- `transport_lwip_create(...)` currently as explicit not-implemented stub
-- `transport_create_by_name(...)` for backend selection (`posix` / `ukstub` / `lwip`)
-- `transport_client_post_json(...)` for cloud client use
+Backends:
+- `posix`: host sockets backend for VPS/userland validation
+- `ukstub`: deterministic synthetic backend for deterministic self-test paths
+- `lwip`: real HTTP sockets backend intended for Unikraft/Pi runtime path
 
-Current implementation uses POSIX sockets over HTTP/1.1.
+Backend selection is runtime-configurable in the Unikraft app via command-line
+arguments (see Pi boot cmdline template).
 
-Later migration path on Pi/Unikraft:
+## Runtime Config Ingestion (Unikraft)
 
-- keep model/export/runtime/quantization unchanged
-- replace only `lwip` backend implementation with real Unikraft/lwIP path
+The Unikraft app consumes runtime options from kernel command-line arguments:
 
-## Raspberry Pi Transition Notes
+- `--split-id`
+- `--backend`
+- `--endpoint`
+- `--path`
+- `--timeout`
+- `--retries`
+- `--no-post`
+- `--no-quant`
+- `--no-controller`
 
-Ready now for Pi transition:
+Template source for Pi bring-up arguments:
+- `configs/pi_boot/cmdline.txt.template`
+- `configs/pi_edge_runtime.env.example`
 
-- C artifact format for all supported splits
-- C multi-split forward path and split dispatch
-- cloud JSON contract compatibility
-- transport backend abstraction
-- C controller scaffolding hooks
+## Build + Validation Commands
 
-Still deferred to Pi hardware stage:
+```bash
+# Export C artifacts and regenerate embedded model source
+make uk-edge-embed-artifacts
 
-- PMU (`lib-pmu`) real counters
-- NEON optimization and performance tuning
-- lwIP transport backend replacement and MQTT ingestion path
-- INA219 and board-specific instrumentation
+# Build/validate Unikraft edge runtime on QEMU
+make uk-edge-build
+make uk-edge-validate
+
+# Build deterministic Pi image candidate
+make pi-image-build
+
+# Prepare explicit boot-media layout
+make pi-boot-media
+```
+
+## Pi Transition Notes
+
+Ready now:
+- Embedded model strategy locked and implemented
+- Deterministic image output path + boot-media recipe
+- Runtime config ingestion + acceptance markers
+- Real lwip backend implementation under stable transport abstraction
+
+Still hardware-only:
+- PMU/lib-pmu
+- INA219 instrumentation
+- Final on-device networking and timing/perf characterization
+- NEON optimization
+- MQTT-on-device integration validation

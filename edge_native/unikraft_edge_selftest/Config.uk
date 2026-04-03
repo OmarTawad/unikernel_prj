@@ -3,6 +3,12 @@ config APPEDGESELFTEST_DEPENDENCIES
 	default y
 	select LIBNOLIBC if !HAVE_LIBC
 	select FPSIMD
+	select LIBPOSIX_FD
+	select LIBPOSIX_FDIO
+	select LIBPOSIX_FDTAB
+	select LIBPOSIX_PROCESS
+	select LIBPOSIX_SOCKET
+	select LIBPOSIX_TIME
 
 config APPEDGESELFTEST_PRINT_DETAIL
 	bool "Print detailed selftest markers"

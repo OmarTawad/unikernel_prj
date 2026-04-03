@@ -1,161 +1,280 @@
+#include "cloud_client.h"
 #include "controller.h"
-#include "edge_model.h"
 #include "edge_runtime.h"
+#include "embedded_model.h"
 #include "transport_backend.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define EDGE_OUTPUT_MAX (EDGE_OUT_CH2 * EDGE_OUT_LEN2)
 
-static float g_conv1_weight[EDGE_OUT_CH1 * 1 * 3];
-static float g_conv1_bias[EDGE_OUT_CH1];
-static float g_bn1_gamma[EDGE_OUT_CH1];
-static float g_bn1_beta[EDGE_OUT_CH1];
-static float g_bn1_mean[EDGE_OUT_CH1];
-static float g_bn1_var[EDGE_OUT_CH1];
+typedef struct {
+    int split_id;
+    const char *backend;
+    const char *endpoint;
+    const char *path;
+    int timeout_seconds;
+    int retries;
+    int do_post;
+    int use_quantization;
+    int run_controller;
+} app_cfg_t;
 
-static float g_conv2_weight[EDGE_OUT_CH2 * EDGE_OUT_CH1 * 3];
-static float g_conv2_bias[EDGE_OUT_CH2];
-static float g_bn2_gamma[EDGE_OUT_CH2];
-static float g_bn2_beta[EDGE_OUT_CH2];
-static float g_bn2_mean[EDGE_OUT_CH2];
-static float g_bn2_var[EDGE_OUT_CH2];
+static int parse_int_arg(const char *s, int *out)
+{
+    char *endptr = NULL;
+    long v;
 
-static float g_fc1_weight[EDGE_FC1_LEN * EDGE_POOL_LEN];
-static float g_fc1_bias[EDGE_FC1_LEN];
-static float g_input[EDGE_INPUT_LEN];
-static float g_split_output[EDGE_OUTPUT_MAX];
+    if (!s || !out) {
+        return -1;
+    }
 
-static void init_deterministic_tensors(void)
+    v = strtol(s, &endptr, 10);
+    if (endptr == s || (endptr && *endptr != '\0')) {
+        return -1;
+    }
+    *out = (int) v;
+    return 0;
+}
+
+static void cfg_defaults(app_cfg_t *cfg)
+{
+    cfg->split_id = 7;
+    cfg->backend = "ukstub";
+    cfg->endpoint = "ukstub://ok";
+    cfg->path = "/infer/split";
+    cfg->timeout_seconds = 10;
+    cfg->retries = 1;
+    cfg->do_post = 1;
+    cfg->use_quantization = 0;
+    cfg->run_controller = 1;
+}
+
+static int parse_args(int argc, char *argv[], app_cfg_t *cfg, char *err, size_t err_size)
 {
     int i;
-    memset(g_conv1_weight, 0, sizeof(g_conv1_weight));
-    memset(g_conv2_weight, 0, sizeof(g_conv2_weight));
-    memset(g_fc1_weight, 0, sizeof(g_fc1_weight));
 
-    for (i = 0; i < EDGE_OUT_CH1; i++) {
-        g_conv1_bias[i] = 1.0f;
-        g_bn1_gamma[i] = 1.0f;
-        g_bn1_beta[i] = 0.0f;
-        g_bn1_mean[i] = 0.0f;
-        g_bn1_var[i] = 1.0f;
+    if (!cfg) {
+        return -1;
     }
-    for (i = 0; i < EDGE_OUT_CH2; i++) {
-        g_conv2_bias[i] = 2.0f;
-        g_bn2_gamma[i] = 1.0f;
-        g_bn2_beta[i] = 0.0f;
-        g_bn2_mean[i] = 0.0f;
-        g_bn2_var[i] = 1.0f;
+
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--split-id") == 0 && i + 1 < argc) {
+            if (parse_int_arg(argv[++i], &cfg->split_id) != 0) {
+                snprintf(err, err_size, "invalid --split-id value");
+                return -1;
+            }
+        } else if (strcmp(argv[i], "--backend") == 0 && i + 1 < argc) {
+            cfg->backend = argv[++i];
+        } else if (strcmp(argv[i], "--endpoint") == 0 && i + 1 < argc) {
+            cfg->endpoint = argv[++i];
+        } else if (strcmp(argv[i], "--path") == 0 && i + 1 < argc) {
+            cfg->path = argv[++i];
+        } else if (strcmp(argv[i], "--timeout") == 0 && i + 1 < argc) {
+            if (parse_int_arg(argv[++i], &cfg->timeout_seconds) != 0 || cfg->timeout_seconds <= 0) {
+                snprintf(err, err_size, "invalid --timeout value");
+                return -1;
+            }
+        } else if (strcmp(argv[i], "--retries") == 0 && i + 1 < argc) {
+            if (parse_int_arg(argv[++i], &cfg->retries) != 0 || cfg->retries <= 0) {
+                snprintf(err, err_size, "invalid --retries value");
+                return -1;
+            }
+        } else if (strcmp(argv[i], "--no-post") == 0) {
+            cfg->do_post = 0;
+        } else if (strcmp(argv[i], "--no-quant") == 0) {
+            cfg->use_quantization = 0;
+        } else if (strcmp(argv[i], "--no-controller") == 0) {
+            cfg->run_controller = 0;
+        } else {
+            snprintf(err, err_size, "unknown or malformed arg: %s", argv[i]);
+            return -1;
+        }
     }
-    for (i = 0; i < EDGE_FC1_LEN; i++) {
-        g_fc1_bias[i] = 3.0f;
+
+    if (!edge_model_is_supported_split(cfg->split_id)) {
+        snprintf(err, err_size, "unsupported split_id=%d", cfg->split_id);
+        return -1;
     }
+
+    if (!cfg->backend || !cfg->endpoint || !cfg->path) {
+        snprintf(err, err_size, "backend/endpoint/path config missing");
+        return -1;
+    }
+
+    return 0;
 }
 
-static void setup_model_for_split(edge_model_t *model, int split_id)
-{
-    memset(model, 0, sizeof(*model));
-    model->split_id = split_id;
-    model->eps = 1e-5f;
-    (void) edge_model_output_shape_for_split(split_id, model->output_shape, &model->output_ndim, &model->output_len);
-
-    model->conv1_weight = g_conv1_weight;
-    model->conv1_bias = g_conv1_bias;
-    model->bn1_gamma = g_bn1_gamma;
-    model->bn1_beta = g_bn1_beta;
-    model->bn1_mean = g_bn1_mean;
-    model->bn1_var = g_bn1_var;
-
-    model->conv2_weight = g_conv2_weight;
-    model->conv2_bias = g_conv2_bias;
-    model->bn2_gamma = g_bn2_gamma;
-    model->bn2_beta = g_bn2_beta;
-    model->bn2_mean = g_bn2_mean;
-    model->bn2_var = g_bn2_var;
-
-    model->fc1_weight = g_fc1_weight;
-    model->fc1_bias = g_fc1_bias;
-}
-
-static int run_split_selftest(const float *input, int split_id, float *out_buf, size_t *out_len)
+static int run_split_forward(int split_id, const float *input, float *out, size_t *out_len)
 {
     edge_model_t model;
     char err[128];
 
-    setup_model_for_split(&model, split_id);
-    if (edge_runtime_forward(&model, input, out_buf, EDGE_OUTPUT_MAX, out_len, err, sizeof(err)) != 0) {
-        printf("UK_SELFTEST_FAIL split=%d err=%s\n", split_id, err);
+    if (edge_model_load_embedded(&model, split_id, err, sizeof(err)) != 0) {
+        printf("PI_MARKER_SPLIT_DISPATCH_FAIL split=%d stage=model_load err=%s\n", split_id, err);
         return -1;
     }
-    printf("UK_SELFTEST_SPLIT_OK split=%d len=%zu\n", split_id, *out_len);
+    if (edge_runtime_forward(&model, input, out, EDGE_OUTPUT_MAX, out_len, err, sizeof(err)) != 0) {
+        printf("PI_MARKER_SPLIT_DISPATCH_FAIL split=%d stage=forward err=%s\n", split_id, err);
+        return -1;
+    }
+
+    printf("PI_MARKER_SPLIT_DISPATCH_OK split=%d len=%zu act0=%.6f\n", split_id, *out_len, out[0]);
     return 0;
 }
 
 int main(int argc, char *argv[])
 {
+    app_cfg_t cfg;
+    char err[256];
+    float out[EDGE_OUTPUT_MAX];
     size_t out_len = 0;
+    const float *input;
+    int selftest_splits[3] = {3, 7, 8};
     int i;
 
     feasible_split_set_t feasible;
-    int selected = -1;
+    transport_client_t transport;
+    cloud_infer_result_t result;
+    int req_shape[3];
+    size_t req_shape_len = 0;
+    int ok = 0;
 
-    transport_client_t t;
-    char *resp = NULL;
-    char err[128];
-    int splits[3] = {3, 7, 8};
+    printf("PI_MARKER_BOOT_START app=unisplit_edge_selftest\n");
+    printf("PI_MARKER_ARTIFACT_STRATEGY=%s\n", edge_embedded_artifact_strategy());
 
-    (void) argc;
-    (void) argv;
-
-    init_deterministic_tensors();
-    for (i = 0; i < EDGE_INPUT_LEN; i++) {
-        g_input[i] = (float) i / (float) EDGE_INPUT_LEN;
+    cfg_defaults(&cfg);
+    memset(err, 0, sizeof(err));
+    if (parse_args(argc, argv, &cfg, err, sizeof(err)) != 0) {
+        printf("PI_MARKER_CONFIG_FAIL err=%s\n", err);
+        return 2;
     }
 
-    if (run_split_selftest(g_input, 3, g_split_output, &out_len) != 0) {
-        return 1;
-    }
-    if (run_split_selftest(g_input, 7, g_split_output, &out_len) != 0) {
-        return 1;
-    }
-    if (run_split_selftest(g_input, 8, g_split_output, &out_len) != 0) {
-        return 1;
+    printf(
+        "PI_MARKER_CONFIG_OK split=%d backend=%s endpoint=%s path=%s timeout=%d retries=%d post=%d quant=%d\n",
+        cfg.split_id,
+        cfg.backend,
+        cfg.endpoint,
+        cfg.path,
+        cfg.timeout_seconds,
+        cfg.retries,
+        cfg.do_post,
+        cfg.use_quantization
+    );
+
+    input = edge_embedded_reference_input();
+
+    for (i = 0; i < 3; i++) {
+        size_t test_len = 0;
+        if (run_split_forward(selftest_splits[i], input, out, &test_len) != 0) {
+            return 1;
+        }
+        printf("UK_SELFTEST_SPLIT_OK split=%d len=%zu\n", selftest_splits[i], test_len);
     }
     printf("UK_SELFTEST_EDGE_OK\n");
 
-    if (feasible_split_set_init(&feasible, splits, 3) != 0) {
-        printf("UK_SELFTEST_FAIL controller_init\n");
-        return 1;
-    }
-    selected = feasible.split_ids[0];
-    if (!feasible_split_set_contains(&feasible, selected)) {
-        printf("UK_SELFTEST_FAIL controller_contains\n");
-        return 1;
-    }
-    printf("UK_SELFTEST_CTRL_OK selected=%d count=%zu\n", selected, feasible.count);
+    if (cfg.run_controller) {
+        controller_context_t ctx;
+        int selected = -1;
 
-    if (transport_create_by_name("ukstub", "ukstub://ok", 1, &t, err, sizeof(err)) != 0) {
-        printf("UK_SELFTEST_FAIL transport_create err=%s\n", err);
-        return 1;
-    }
-    printf("UK_SELFTEST_TRANSPORT=ukstub\n");
+        ctx.rtt_ms = 4.0f;
+        ctx.cpu_util = 0.30f;
+        ctx.entropy = 0.20f;
+        ctx.reserved0 = 0.0f;
 
-    if (transport_client_post_json(&t, "/infer/split", "{\"request_id\":\"uk-selftest\"}", &resp) != 0) {
-        transport_client_destroy(&t);
-        printf("UK_SELFTEST_FAIL transport_post\n");
-        return 1;
-    }
-    if (!resp || strstr(resp, "\"status\":\"ok\"") == NULL) {
-        transport_response_free(resp);
-        transport_client_destroy(&t);
-        printf("UK_SELFTEST_FAIL transport_resp\n");
-        return 1;
-    }
-    transport_response_free(resp);
-    transport_client_destroy(&t);
-    printf("UK_SELFTEST_TRANSPORT_OK\n");
+        if (feasible_split_set_init(&feasible, selftest_splits, 3) != 0) {
+            printf("PI_MARKER_CONTROLLER_FAIL err=feasible_set_init\n");
+            return 1;
+        }
 
+        selected = feasible.split_ids[0];
+        if (!feasible_split_set_contains(&feasible, selected)) {
+            printf("PI_MARKER_CONTROLLER_FAIL err=contains_false\n");
+            return 1;
+        }
+        printf("PI_MARKER_CONTROLLER_OK selected=%d count=%zu\n", selected, feasible.count);
+        printf("UK_SELFTEST_CTRL_OK selected=%d count=%zu\n", selected, feasible.count);
+        (void) ctx;
+    }
+
+    if (run_split_forward(cfg.split_id, input, out, &out_len) != 0) {
+        return 1;
+    }
+
+    if (!cfg.do_post) {
+        printf("PI_MARKER_POST_SKIPPED\n");
+        printf("PI_MARKER_FINAL_SUCCESS\n");
+        printf("UK_SELFTEST_DONE\n");
+        return 0;
+    }
+
+    memset(&transport, 0, sizeof(transport));
+    if (transport_create_by_name(cfg.backend, cfg.endpoint, cfg.timeout_seconds, &transport, err, sizeof(err)) != 0) {
+        printf("PI_MARKER_BACKEND_INIT_FAIL backend=%s err=%s\n", cfg.backend, err);
+        return 1;
+    }
+    printf("PI_MARKER_BACKEND_INIT_OK backend=%s\n", cfg.backend);
+    printf("PI_MARKER_NETWORK_READY backend=%s endpoint=%s\n", cfg.backend, cfg.endpoint);
+    printf("UK_SELFTEST_TRANSPORT=%s\n", cfg.backend);
+
+    if (cfg.split_id == 0) {
+        req_shape[0] = 1;
+        req_shape[1] = 1;
+        req_shape[2] = EDGE_INPUT_LEN;
+        req_shape_len = 3;
+    } else if (cfg.split_id == 3 || cfg.split_id == 6) {
+        req_shape[0] = 1;
+        req_shape[1] = (cfg.split_id == 3) ? EDGE_OUT_CH1 : EDGE_OUT_CH2;
+        req_shape[2] = (cfg.split_id == 3) ? EDGE_OUT_LEN1 : EDGE_OUT_LEN2;
+        req_shape_len = 3;
+    } else {
+        req_shape[0] = 1;
+        req_shape[1] = (int) out_len;
+        req_shape_len = 2;
+    }
+
+    for (i = 1; i <= cfg.retries; i++) {
+        printf("PI_MARKER_INFER_ATTEMPT split=%d attempt=%d/%d path=%s\n", cfg.split_id, i, cfg.retries, cfg.path);
+
+        if (cloud_client_send_split_to_path(
+                &transport,
+                cfg.path,
+                cfg.split_id,
+                out,
+                out_len,
+                req_shape,
+                req_shape_len,
+                cfg.use_quantization,
+                "v0.1.0",
+                &result,
+                err,
+                sizeof(err)) == 0) {
+            ok = 1;
+            printf(
+                "PI_MARKER_INFER_RESPONSE_OK split=%d status=%s class=%d label=%s total_ms=%.3f\n",
+                cfg.split_id,
+                result.status,
+                result.predicted_class,
+                result.predicted_label,
+                result.timing_total_ms
+            );
+            printf("UK_SELFTEST_TRANSPORT_OK\n");
+            break;
+        }
+
+        printf("PI_MARKER_INFER_RESPONSE_FAIL split=%d attempt=%d err=%s\n", cfg.split_id, i, err);
+    }
+
+    transport_client_destroy(&transport);
+
+    if (!ok) {
+        printf("PI_MARKER_FINAL_FAIL reason=infer_failed\n");
+        return 1;
+    }
+
+    printf("PI_MARKER_FINAL_SUCCESS\n");
     printf("UK_SELFTEST_DONE\n");
     return 0;
 }

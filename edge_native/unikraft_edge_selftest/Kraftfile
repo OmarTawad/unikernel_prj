@@ -1,7 +1,9 @@
-specification: "0.5"
+specification: "0.6"
 name: unisplit-uk-edge-selftest
 unikraft:
   version: stable
 targets:
   - architecture: arm64
     platform: qemu
+  - architecture: arm64
+    platform: fc

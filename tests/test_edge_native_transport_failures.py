@@ -113,7 +113,10 @@ def test_cli_rejects_unknown_transport_backend(c_runtime_build_dir: Path, edge_c
     assert "Transport init failed: Unsupported transport backend" in run.stderr
 
 
-def test_cli_reports_lwip_backend_not_implemented(c_runtime_build_dir: Path, edge_c_splits_artifacts: Path):
+def test_cli_lwip_backend_attempts_network_and_fails_on_unreachable_host(
+    c_runtime_build_dir: Path,
+    edge_c_splits_artifacts: Path,
+):
     cli = c_runtime_build_dir / "unisplit_edge_cli"
     run = subprocess.run(
         [
@@ -126,7 +129,7 @@ def test_cli_reports_lwip_backend_not_implemented(c_runtime_build_dir: Path, edg
             "--transport-backend",
             "lwip",
             "--transport-endpoint",
-            "http://127.0.0.1:8000",
+            "http://127.0.0.1:65500",
             "--model-version",
             "v0.1.0",
         ],
@@ -135,4 +138,5 @@ def test_cli_reports_lwip_backend_not_implemented(c_runtime_build_dir: Path, edg
         check=False,
     )
     assert run.returncode != 0
-    assert "Transport init failed: lwip backend is not implemented yet" in run.stderr
+    assert "TRANSPORT_BACKEND=lwip" in run.stdout
+    assert "Cloud request failed: HTTP POST failed" in run.stderr

@@ -19,13 +19,29 @@ echo "[prepare] Building readiness manifest..."
   --repo-root "${ROOT_DIR}" \
   --output "artifacts/pi_handoff/${STAMP}/pi_readiness_manifest.json"
 
+echo "[prepare] Building image candidate and boot-media layout..."
+"${ROOT_DIR}/scripts/prepare_pi_boot_media.sh" >/dev/null
+
 echo "[prepare] Assembling Pi boot payload layout..."
 mkdir -p "${PAYLOAD_DIR}/c_splits"
 cp -a "${ROOT_DIR}/edge_native/artifacts/c_splits/." "${PAYLOAD_DIR}/c_splits/"
 cp "${ROOT_DIR}/configs/pi_edge_runtime.env.example" "${PAYLOAD_DIR}/"
+mkdir -p "${PAYLOAD_DIR}/pi_boot"
+cp "${ROOT_DIR}/configs/pi_boot/config.txt" "${PAYLOAD_DIR}/pi_boot/"
+cp "${ROOT_DIR}/configs/pi_boot/cmdline.txt.template" "${PAYLOAD_DIR}/pi_boot/"
 cp "${ROOT_DIR}/docs/protocol.md" "${PAYLOAD_DIR}/"
 cp "${ROOT_DIR}/docs/pre_pi_validation_checklist.md" "${PAYLOAD_DIR}/"
 cp "${RUN_DIR}/pi_readiness_manifest.json" "${PAYLOAD_DIR}/"
+
+if [[ -f "${ROOT_DIR}/artifacts/pi_handoff/latest/images/kernel8.img" ]]; then
+  mkdir -p "${PAYLOAD_DIR}/images"
+  cp "${ROOT_DIR}/artifacts/pi_handoff/latest/images/kernel8.img" "${PAYLOAD_DIR}/images/"
+  cp "${ROOT_DIR}/artifacts/pi_handoff/latest/images/image_build_metadata.txt" "${PAYLOAD_DIR}/images/" 2>/dev/null || true
+fi
+if [[ -d "${ROOT_DIR}/artifacts/pi_handoff/latest/boot_media" ]]; then
+  mkdir -p "${PAYLOAD_DIR}/boot_media"
+  cp -a "${ROOT_DIR}/artifacts/pi_handoff/latest/boot_media/." "${PAYLOAD_DIR}/boot_media/"
+fi
 
 echo "[prepare] Creating tarball..."
 tar -czf "${PAYLOAD_TAR}" -C "${PAYLOAD_DIR}" .

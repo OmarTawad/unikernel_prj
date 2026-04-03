@@ -8,9 +8,9 @@ PYTEST := $(VENV)/bin/pytest
         export-partitions profile-memory run-cloud run-edge smoke-test \
         docker-build docker-up docker-down docker-logs clean
 .PHONY: uk-check uk-build uk-run uk-validate
-.PHONY: uk-edge-build uk-edge-run uk-edge-validate
+.PHONY: uk-edge-embed-artifacts uk-edge-build uk-edge-run uk-edge-validate uk-edge-build-pi
 .PHONY: export-edge-c export-edge-c-all c-edge-build c-edge-forward-verify c-edge-forward-verify-all c-edge-quant-verify c-edge-controller-verify c-edge-failure-verify c-edge-roundtrip c-edge-roundtrip-generic c-edge-roundtrip-vps
-.PHONY: prepi-validate pi-readiness-manifest pi-readiness-check pi-boot-payload
+.PHONY: prepi-validate pi-readiness-manifest pi-readiness-check pi-boot-payload pi-image-build pi-boot-media
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -112,6 +112,7 @@ uk-validate: ## Full T01 validation flow
 	bash scripts/validate_t01_unikraft_qemu.sh
 
 uk-edge-build: ## Build ARM64 Unikraft edge selftest target
+	$(MAKE) uk-edge-embed-artifacts
 	kraft --no-prompt --log-type basic build --plat qemu --arch arm64 edge_native/unikraft_edge_selftest
 
 uk-edge-run: ## Run ARM64 Unikraft edge selftest on QEMU (TCG emulation)
@@ -119,6 +120,13 @@ uk-edge-run: ## Run ARM64 Unikraft edge selftest on QEMU (TCG emulation)
 
 uk-edge-validate: ## Validate Unikraft edge selftest boot markers and log
 	bash scripts/validate_uk_edge_selftest_qemu.sh
+
+uk-edge-embed-artifacts: ## Generate embedded model sources from exported edge_k9 artifacts
+	$(MAKE) export-edge-c-all
+	$(PYTHON) scripts/generate_embedded_edge_model.py --artifact-dir edge_native/artifacts/c_splits/edge_k9 --output-dir edge_native/unikraft_edge_selftest/generated
+
+uk-edge-build-pi: ## Build Pi-target image candidate and record deterministic output path
+	bash scripts/build_pi_image.sh
 
 # ── Edge-Native Runtime (T02a) ──────────────────────────
 
@@ -169,6 +177,12 @@ pi-readiness-check: ## Verify pre-hardware Pi readiness paths and artifacts
 
 pi-boot-payload: ## Build Pi handoff payload tarball with manifest and C artifacts
 	bash scripts/prepare_pi_boot_payload.sh
+
+pi-image-build: ## Build deterministic Pi image candidate from Unikraft edge runtime app
+	$(MAKE) uk-edge-build-pi
+
+pi-boot-media: ## Prepare explicit boot-media layout with kernel image + boot configs
+	bash scripts/prepare_pi_boot_media.sh
 
 # ── Cleanup ────────────────────────────────────────────
 

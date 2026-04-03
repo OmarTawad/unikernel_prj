@@ -16,7 +16,7 @@ static void usage(const char *prog)
             "Usage: %s [--split-id N] [--artifacts-root DIR] [--artifacts-dir DIR]\\n"
             "          [--input-bin FILE] [--dump-activation FILE]\\n"
             "          [--post] [--cloud-url URL] [--transport-backend NAME] [--transport-endpoint URI]\\n"
-            "          [--model-version VER] [--no-quant]\\n",
+            "          [--cloud-path PATH] [--retries N] [--model-version VER] [--no-quant]\\n",
             prog);
 }
 
@@ -39,9 +39,11 @@ int main(int argc, char **argv)
     const char *cloud_url = env_or_default("UNISPLIT_CLOUD_URL", "http://localhost:8000");
     const char *transport_backend = env_or_default("UNISPLIT_TRANSPORT_BACKEND", "posix");
     const char *transport_endpoint = NULL;
+    const char *cloud_path = env_or_default("UNISPLIT_TRANSPORT_PATH", "/infer/split");
     const char *model_version = env_or_default("UNISPLIT_MODEL_VERSION", "v0.1.0");
     int do_post = 0;
     int use_quant = 1;
+    int retries = 1;
     int i;
 
     char resolved_artifact_dir[512];
@@ -71,6 +73,14 @@ int main(int argc, char **argv)
             transport_backend = argv[++i];
         } else if (strcmp(argv[i], "--transport-endpoint") == 0 && i + 1 < argc) {
             transport_endpoint = argv[++i];
+        } else if (strcmp(argv[i], "--cloud-path") == 0 && i + 1 < argc) {
+            cloud_path = argv[++i];
+        } else if (strcmp(argv[i], "--retries") == 0 && i + 1 < argc) {
+            retries = atoi(argv[++i]);
+            if (retries <= 0) {
+                fprintf(stderr, "Invalid retries value\n");
+                return 2;
+            }
         } else if (strcmp(argv[i], "--model-version") == 0 && i + 1 < argc) {
             model_version = argv[++i];
         } else if (strcmp(argv[i], "--no-quant") == 0) {
@@ -162,22 +172,33 @@ int main(int argc, char **argv)
             }
             printf("TRANSPORT_BACKEND=%s endpoint=%s\\n", transport_backend, endpoint);
 
-            if (cloud_client_send_split(
-                    &transport,
-                    split_id,
-                    output,
-                    output_len,
-                    req_shape,
-                    req_shape_len,
-                    use_quant,
-                    model_version,
-                    &result,
-                    err,
-                    sizeof(err)) != 0) {
-                fprintf(stderr, "Cloud request failed: %s\\n", err);
-                transport_client_destroy(&transport);
-                edge_model_free(&model);
-                return 1;
+            {
+                int attempt;
+                int success = 0;
+                for (attempt = 1; attempt <= retries; attempt++) {
+                    if (cloud_client_send_split_to_path(
+                            &transport,
+                            cloud_path,
+                            split_id,
+                            output,
+                            output_len,
+                            req_shape,
+                            req_shape_len,
+                            use_quant,
+                            model_version,
+                            &result,
+                            err,
+                            sizeof(err)) == 0) {
+                        success = 1;
+                        break;
+                    }
+                }
+                if (!success) {
+                    fprintf(stderr, "Cloud request failed: %s\\n", err);
+                    transport_client_destroy(&transport);
+                    edge_model_free(&model);
+                    return 1;
+                }
             }
 
             printf("CLOUD_OK split=%d status=%s class=%d label=%s total_ms=%.3f\\n",

@@ -19,7 +19,7 @@ add_library(unisplit_edge_runtime STATIC
     src/base64.c
     src/transport_common.c
     src/transport_backend_factory.c
-    src/transport_lwip_backend_stub.c
+    src/transport_lwip_backend.c
     src/transport_posix_backend.c
     src/transport_ukstub_backend.c
     src/cloud_client.c

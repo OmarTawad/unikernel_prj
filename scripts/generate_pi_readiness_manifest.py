@@ -39,6 +39,7 @@ PI_REQUIRED_PATHS: tuple[str, ...] = (
     "edge_native/runtime/src",
     "edge_native/runtime/CMakeLists.txt",
     "edge_native/unikraft_edge_selftest",
+    "edge_native/unikraft_edge_selftest/generated",
     "edge_native/unikraft_hello",
     "edge_native/artifacts/c_splits",
     "docs/protocol.md",
@@ -46,8 +47,13 @@ PI_REQUIRED_PATHS: tuple[str, ...] = (
     "docs/pre_pi_validation_checklist.md",
     "docs/unikraft_qemu_validation.md",
     "configs/pi_edge_runtime.env.example",
+    "configs/pi_boot/config.txt",
+    "configs/pi_boot/cmdline.txt.template",
     "Makefile",
     "scripts/export_edge_c_artifacts.py",
+    "scripts/generate_embedded_edge_model.py",
+    "scripts/build_pi_image.sh",
+    "scripts/prepare_pi_boot_media.sh",
     "unisplit/edge_native/export_c.py",
 )
 
@@ -59,6 +65,12 @@ GENERATED_DEPLOY_OUTPUTS: tuple[str, ...] = (
     "edge_native/unikraft_edge_selftest/.unikraft/build/unisplit-uk-edge-selftest_qemu-arm64",
     "edge_native/unikraft_edge_selftest/.unikraft/build/unisplit-uk-edge-selftest_qemu-arm64.dbg",
     "edge_native/unikraft_edge_selftest/.unikraft/build/unisplit-uk-edge-selftest_qemu-arm64.bootinfo",
+    "artifacts/pi_handoff/latest/images/kernel8.img",
+    "artifacts/pi_handoff/latest/images/image_build_metadata.txt",
+    "artifacts/pi_handoff/latest/boot_media/boot/kernel8.img",
+    "artifacts/pi_handoff/latest/boot_media/boot/config.txt",
+    "artifacts/pi_handoff/latest/boot_media/boot/cmdline.txt",
+    "artifacts/pi_handoff/latest/boot_media/boot_media_manifest.txt",
     "artifacts/roundtrip/latest/summary.json",
     "artifacts/roundtrip/latest/cloud.log",
     "artifacts/roundtrip/latest/split_k3.log",
@@ -199,10 +211,9 @@ def main() -> None:
         },
         "pi_boot_payload_candidates": sorted(payload_candidates),
         "known_pi_phase_blockers": [
-            "real lwip backend implementation",
-            "Pi platform target in Kraftfile",
-            "unikernel artifact-loading strategy (manifest/bin in-kernel or embedding pipeline)",
             "hardware PMU/INA219 validation",
+            "final on-device networking behavior verification",
+            "NEON optimization and hardware timing characterization",
         ],
     }
 
