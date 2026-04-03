@@ -54,6 +54,9 @@ edge_native/**/.config.*
 edge_native/runtime/build/
 edge_native/artifacts/edge_k7_c/
 edge_native/artifacts/c_splits/
+artifacts/roundtrip/latest/
+artifacts/prepi/
+artifacts/pi_handoff/
 
 
 latex.txt

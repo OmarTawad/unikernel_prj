@@ -8,7 +8,9 @@ PYTEST := $(VENV)/bin/pytest
         export-partitions profile-memory run-cloud run-edge smoke-test \
         docker-build docker-up docker-down docker-logs clean
 .PHONY: uk-check uk-build uk-run uk-validate
-.PHONY: export-edge-c export-edge-c-all c-edge-build c-edge-forward-verify c-edge-forward-verify-all c-edge-quant-verify c-edge-controller-verify c-edge-roundtrip c-edge-roundtrip-generic
+.PHONY: uk-edge-build uk-edge-run uk-edge-validate
+.PHONY: export-edge-c export-edge-c-all c-edge-build c-edge-forward-verify c-edge-forward-verify-all c-edge-quant-verify c-edge-controller-verify c-edge-failure-verify c-edge-roundtrip c-edge-roundtrip-generic c-edge-roundtrip-vps
+.PHONY: prepi-validate pi-readiness-manifest pi-readiness-check pi-boot-payload
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -109,6 +111,15 @@ uk-run: ## Run ARM64 Unikraft hello on QEMU (TCG emulation)
 uk-validate: ## Full T01 validation flow
 	bash scripts/validate_t01_unikraft_qemu.sh
 
+uk-edge-build: ## Build ARM64 Unikraft edge selftest target
+	kraft --no-prompt --log-type basic build --plat qemu --arch arm64 edge_native/unikraft_edge_selftest
+
+uk-edge-run: ## Run ARM64 Unikraft edge selftest on QEMU (TCG emulation)
+	timeout 40s kraft --no-prompt --log-type basic run --plat qemu --arch arm64 --disable-acceleration edge_native/unikraft_edge_selftest
+
+uk-edge-validate: ## Validate Unikraft edge selftest boot markers and log
+	bash scripts/validate_uk_edge_selftest_qemu.sh
+
 # ── Edge-Native Runtime (T02a) ──────────────────────────
 
 export-edge-c: ## Export split-7 edge artifacts for C runtime
@@ -133,11 +144,31 @@ c-edge-quant-verify: ## Run C/Python quantization parity test
 c-edge-controller-verify: ## Run C controller/LinUCB sanity tests
 	$(PYTEST) tests/test_edge_native_controller.py -v --tb=short
 
+c-edge-failure-verify: ## Run failure-path hardening tests
+	$(PYTEST) tests/test_edge_native_failures.py tests/test_edge_native_transport_failures.py -v --tb=short
+
 c-edge-roundtrip: ## Run host-side C cloud /infer/split roundtrip test
 	$(PYTEST) tests/test_edge_native_cloud_roundtrip.py -v --tb=short
 
 c-edge-roundtrip-generic: ## Run generic multi-split C cloud /infer/split roundtrip test
 	$(PYTEST) tests/test_edge_native_cloud_roundtrip_generic.py -v --tb=short
+
+c-edge-roundtrip-vps: ## Run VPS roundtrip matrix and persist evidence artifacts
+	$(MAKE) export-edge-c-all
+	$(MAKE) c-edge-build
+	bash scripts/run_vps_roundtrip_matrix.sh
+
+prepi-validate: ## Run the full pre-Pi validation baseline and emit report
+	bash scripts/run_prepi_validation.sh
+
+pi-readiness-manifest: ## Generate concrete Pi readiness manifest
+	$(PYTHON) scripts/generate_pi_readiness_manifest.py --repo-root . --output artifacts/pi_handoff/latest/pi_readiness_manifest.json
+
+pi-readiness-check: ## Verify pre-hardware Pi readiness paths and artifacts
+	bash scripts/check_pi_readiness.sh
+
+pi-boot-payload: ## Build Pi handoff payload tarball with manifest and C artifacts
+	bash scripts/prepare_pi_boot_payload.sh
 
 # ── Cleanup ────────────────────────────────────────────
 

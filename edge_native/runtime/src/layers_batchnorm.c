@@ -1,6 +1,20 @@
 #include "layers.h"
 
-#include <math.h>
+static float approx_sqrtf(float x)
+{
+    float guess;
+    int i;
+
+    if (x <= 0.0f) {
+        return 0.0f;
+    }
+
+    guess = (x > 1.0f) ? x : 1.0f;
+    for (i = 0; i < 8; i++) {
+        guess = 0.5f * (guess + x / guess);
+    }
+    return guess;
+}
 
 void layer_batchnorm_eval(
     const float *input,
@@ -18,7 +32,7 @@ void layer_batchnorm_eval(
     int i;
 
     for (c = 0; c < channels; c++) {
-        float inv_std = 1.0f / sqrtf(var[c] + eps);
+        float inv_std = 1.0f / approx_sqrtf(var[c] + eps);
         float g = gamma[c];
         float b = beta[c];
         float m = mean[c];

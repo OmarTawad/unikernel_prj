@@ -37,4 +37,29 @@ int transport_posix_create(
     size_t err_size
 );
 
+int transport_ukstub_create(
+    const char *endpoint,
+    int timeout_seconds,
+    transport_client_t *out_client,
+    char *err,
+    size_t err_size
+);
+
+int transport_lwip_create(
+    const char *endpoint,
+    int timeout_seconds,
+    transport_client_t *out_client,
+    char *err,
+    size_t err_size
+);
+
+int transport_create_by_name(
+    const char *backend_name,
+    const char *endpoint,
+    int timeout_seconds,
+    transport_client_t *out_client,
+    char *err,
+    size_t err_size
+);
+
 #endif

@@ -106,6 +106,9 @@ unisplit/
 - [Dataset](docs/dataset.md) — CIC-IoT2023 setup
 - [Deployment](docs/deployment.md) — Docker deployment guide
 - [Examples](docs/examples.md) — Usage examples
+- [Edge Native Runtime](docs/edge_native_runtime.md) — C runtime + transport architecture
+- [Pre-Pi Checklist](docs/pre_pi_validation_checklist.md) — Pre-hardware validation baseline
+- [Raspberry Pi Handoff](docs/raspberry_pi_handoff.md) — Pi package split + day-1 checklist
 
 ## Requirements
 

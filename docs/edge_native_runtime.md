@@ -16,6 +16,7 @@ edge-native runtime architecture across all supported split IDs
   - `k9`: logits
 - Symmetric int8 quantization in C (matching Python contract)
 - Generic host-side HTTP POST to cloud `/infer/split` with pluggable transport backend
+- Backend selection across `posix`, `ukstub`, and `lwip` (stub) transport backends
 - C-side LinUCB controller scaffolding with synthetic sanity tests
 - Tests for export correctness, multi-split forward parity, quant parity, and cloud roundtrip
 
@@ -57,11 +58,25 @@ make c-edge-quant-verify
 # C controller/LinUCB sanity checks
 make c-edge-controller-verify
 
+# Failure-path hardening checks
+make c-edge-failure-verify
+
 # End-to-end host-side POST /infer/split (k7 compatibility path)
 make c-edge-roundtrip
 
 # End-to-end host-side POST /infer/split (generic multi-split path)
 make c-edge-roundtrip-generic
+
+# VPS evidence-producing roundtrip matrix (k3/k7/k8)
+make c-edge-roundtrip-vps
+
+# Unikraft/QEMU edge-runtime selftest (generic runtime linked)
+make uk-edge-validate
+
+# Pi readiness helpers
+make pi-readiness-manifest
+make pi-readiness-check
+make pi-boot-payload
 ```
 
 ## Transport Architecture
@@ -70,6 +85,9 @@ make c-edge-roundtrip-generic
 
 - `transport_client_t` with function pointers (`post_json`, `destroy`)
 - `transport_posix_create(...)` for current host-side implementation
+- `transport_ukstub_create(...)` for deterministic Unikraft-oriented stub path
+- `transport_lwip_create(...)` currently as explicit not-implemented stub
+- `transport_create_by_name(...)` for backend selection (`posix` / `ukstub` / `lwip`)
 - `transport_client_post_json(...)` for cloud client use
 
 Current implementation uses POSIX sockets over HTTP/1.1.
@@ -77,7 +95,7 @@ Current implementation uses POSIX sockets over HTTP/1.1.
 Later migration path on Pi/Unikraft:
 
 - keep model/export/runtime/quantization unchanged
-- replace only transport backend implementation with lwIP/Unikraft path
+- replace only `lwip` backend implementation with real Unikraft/lwIP path
 
 ## Raspberry Pi Transition Notes
 

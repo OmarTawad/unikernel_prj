@@ -15,19 +15,31 @@ static void usage(const char *prog)
     fprintf(stderr,
             "Usage: %s [--split-id N] [--artifacts-root DIR] [--artifacts-dir DIR]\\n"
             "          [--input-bin FILE] [--dump-activation FILE]\\n"
-            "          [--post] [--cloud-url URL] [--model-version VER] [--no-quant]\\n",
+            "          [--post] [--cloud-url URL] [--transport-backend NAME] [--transport-endpoint URI]\\n"
+            "          [--model-version VER] [--no-quant]\\n",
             prog);
+}
+
+static const char *env_or_default(const char *key, const char *fallback)
+{
+    const char *v = getenv(key);
+    if (!v || v[0] == '\0') {
+        return fallback;
+    }
+    return v;
 }
 
 int main(int argc, char **argv)
 {
     int split_id = 7;
-    const char *artifacts_root = "edge_native/artifacts/c_splits";
+    const char *artifacts_root = env_or_default("UNISPLIT_ARTIFACTS_ROOT", "edge_native/artifacts/c_splits");
     const char *artifacts_dir = NULL;
     const char *input_bin = NULL;
     const char *dump_activation = NULL;
-    const char *cloud_url = "http://localhost:8000";
-    const char *model_version = "v0.1.0";
+    const char *cloud_url = env_or_default("UNISPLIT_CLOUD_URL", "http://localhost:8000");
+    const char *transport_backend = env_or_default("UNISPLIT_TRANSPORT_BACKEND", "posix");
+    const char *transport_endpoint = NULL;
+    const char *model_version = env_or_default("UNISPLIT_MODEL_VERSION", "v0.1.0");
     int do_post = 0;
     int use_quant = 1;
     int i;
@@ -55,6 +67,10 @@ int main(int argc, char **argv)
             do_post = 1;
         } else if (strcmp(argv[i], "--cloud-url") == 0 && i + 1 < argc) {
             cloud_url = argv[++i];
+        } else if (strcmp(argv[i], "--transport-backend") == 0 && i + 1 < argc) {
+            transport_backend = argv[++i];
+        } else if (strcmp(argv[i], "--transport-endpoint") == 0 && i + 1 < argc) {
+            transport_endpoint = argv[++i];
         } else if (strcmp(argv[i], "--model-version") == 0 && i + 1 < argc) {
             model_version = argv[++i];
         } else if (strcmp(argv[i], "--no-quant") == 0) {
@@ -78,6 +94,10 @@ int main(int argc, char **argv)
     if (!input_bin) {
         snprintf(default_input_path, sizeof(default_input_path), "%s/reference_input.bin", artifacts_dir);
         input_bin = default_input_path;
+    }
+
+    if (!transport_endpoint) {
+        transport_endpoint = getenv("UNISPLIT_TRANSPORT_ENDPOINT");
     }
 
     if (load_f32_file_exact(input_bin, input, EDGE_INPUT_LEN) != 0) {
@@ -117,6 +137,8 @@ int main(int argc, char **argv)
         if (split_id == 9) {
             printf("LOCAL_ONLY split=9 skips cloud request\\n");
         } else {
+            const char *endpoint = transport_endpoint ? transport_endpoint : cloud_url;
+
             if (split_id == 0) {
                 req_shape[0] = 1;
                 req_shape[1] = 1;
@@ -133,11 +155,12 @@ int main(int argc, char **argv)
                 req_shape_len = 2;
             }
 
-            if (transport_posix_create(cloud_url, 10, &transport, err, sizeof(err)) != 0) {
+            if (transport_create_by_name(transport_backend, endpoint, 10, &transport, err, sizeof(err)) != 0) {
                 fprintf(stderr, "Transport init failed: %s\\n", err);
                 edge_model_free(&model);
                 return 1;
             }
+            printf("TRANSPORT_BACKEND=%s endpoint=%s\\n", transport_backend, endpoint);
 
             if (cloud_client_send_split(
                     &transport,

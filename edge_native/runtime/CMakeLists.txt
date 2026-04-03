@@ -17,7 +17,11 @@ add_library(unisplit_edge_runtime STATIC
     src/model_k7.c
     src/quantize.c
     src/base64.c
+    src/transport_common.c
+    src/transport_backend_factory.c
+    src/transport_lwip_backend_stub.c
     src/transport_posix_backend.c
+    src/transport_ukstub_backend.c
     src/cloud_client.c
     src/controller.c
     src/controller_linucb.c
@@ -46,3 +50,6 @@ target_link_libraries(unisplit_edge_k7_quant_testbin PRIVATE unisplit_edge_runti
 
 add_executable(unisplit_edge_controller_testbin src/controller_testbin.c)
 target_link_libraries(unisplit_edge_controller_testbin PRIVATE unisplit_edge_runtime)
+
+add_executable(unisplit_edge_failure_testbin src/failure_testbin.c)
+target_link_libraries(unisplit_edge_failure_testbin PRIVATE unisplit_edge_runtime)
