@@ -11,6 +11,8 @@ CONFIG_TEMPLATE="${ROOT_DIR}/configs/pi_boot/config.txt"
 CMDLINE_TEMPLATE="${ROOT_DIR}/configs/pi_boot/cmdline.txt.template"
 
 # Optional env file override for endpoint/runtime settings.
+# Use UNISPLIT_PI_ENV_FILE=/path/to/pi_runtime.env to generate cmdline with
+# a different endpoint/backend without editing the committed template.
 PI_ENV_FILE="${UNISPLIT_PI_ENV_FILE:-${ENV_TEMPLATE}}"
 
 # Build deterministic image candidate first.
@@ -28,10 +30,15 @@ set +a
 
 : "${UNISPLIT_EDGE_SPLIT_ID:=7}"
 : "${UNISPLIT_TRANSPORT_BACKEND:=lwip}"
-: "${UNISPLIT_TRANSPORT_ENDPOINT:=http://192.168.1.10:8000}"
+: "${UNISPLIT_TRANSPORT_ENDPOINT:=http://204.168.156.245:8000}"
 : "${UNISPLIT_TRANSPORT_PATH:=/infer/split}"
 : "${UNISPLIT_TRANSPORT_TIMEOUT_SECONDS:=10}"
 : "${UNISPLIT_TRANSPORT_RETRIES:=3}"
+
+if [[ "${UNISPLIT_TRANSPORT_ENDPOINT}" == *"<"* || "${UNISPLIT_TRANSPORT_ENDPOINT}" == *">"* ]]; then
+  echo "[pi-boot] Invalid endpoint in config (placeholder detected): ${UNISPLIT_TRANSPORT_ENDPOINT}" >&2
+  exit 1
+fi
 
 mkdir -p "${BOOT_PART_DIR}"
 cp "${IMAGE_DIR}/kernel8.img" "${BOOT_PART_DIR}/kernel8.img"
@@ -63,6 +70,9 @@ Runtime arguments in cmdline.txt (passed into unikernel main argv):
 - path: ${UNISPLIT_TRANSPORT_PATH}
 - timeout: ${UNISPLIT_TRANSPORT_TIMEOUT_SECONDS}
 - retries: ${UNISPLIT_TRANSPORT_RETRIES}
+
+Endpoint format note:
+- lwip backend currently expects IPv4 literal endpoint format http://<ipv4>:<port>
 
 Expected serial markers for first bring-up:
 - PI_MARKER_BOOT_START

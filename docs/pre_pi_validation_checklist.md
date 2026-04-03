@@ -74,6 +74,15 @@ Roundtrip matrix evidence (`artifacts/roundtrip/latest/summary.json`) must inclu
   - `artifacts/pi_handoff/latest/boot_media/BOOT_MEDIA_README.txt`
   - `artifacts/pi_handoff/latest/boot_media/boot_media_manifest.txt`
 
+## Day-1 Endpoint Lock
+
+- Pi boot cmdline endpoint must be:
+  - `http://204.168.156.245:8000`
+- Request path must be:
+  - `/infer/split`
+- Verify in:
+  - `artifacts/pi_handoff/latest/boot_media/boot/cmdline.txt`
+
 ## Pass/Fail Interpretation
 
 - Pass: all commands above succeed and required markers/artifact files are present.

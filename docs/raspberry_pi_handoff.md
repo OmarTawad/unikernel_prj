@@ -100,6 +100,16 @@ Rendered source values come from:
 - `configs/pi_edge_runtime.env.example`
 - `configs/pi_boot/cmdline.txt.template`
 
+Day-1 locked endpoint:
+- `http://204.168.156.245:8000`
+- path: `/infer/split`
+
+lwIP backend endpoint format currently required:
+- `http://<ipv4>:<port>` (IPv4 literal)
+
+To override endpoint/backend without editing committed defaults:
+- `UNISPLIT_PI_ENV_FILE=/abs/path/to/pi_runtime.env make pi-boot-media`
+
 ## 6) Day-1 Serial Acceptance Markers
 
 Required markers on serial console:

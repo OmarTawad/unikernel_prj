@@ -36,8 +36,14 @@ Backends:
 - `ukstub`: deterministic synthetic backend for deterministic self-test paths
 - `lwip`: real HTTP sockets backend intended for Unikraft/Pi runtime path
 
+Current day-1 Pi endpoint:
+- `http://204.168.156.245:8000`
+
 Backend selection is runtime-configurable in the Unikraft app via command-line
 arguments (see Pi boot cmdline template).
+
+`lwip` endpoint format expectation right now:
+- `http://<ipv4>:<port>` (IPv4 literal, not DNS hostname)
 
 ## Runtime Config Ingestion (Unikraft)
 
@@ -56,6 +62,9 @@ The Unikraft app consumes runtime options from kernel command-line arguments:
 Template source for Pi bring-up arguments:
 - `configs/pi_boot/cmdline.txt.template`
 - `configs/pi_edge_runtime.env.example`
+
+Override path for custom day-1 builds:
+- `UNISPLIT_PI_ENV_FILE=/abs/path/to/pi_runtime.env make pi-boot-media`
 
 ## Build + Validation Commands
 
