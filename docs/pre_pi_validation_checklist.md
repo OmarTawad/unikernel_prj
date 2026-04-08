@@ -1,7 +1,7 @@
-# Pre-Pi Validation Checklist (VPS/QEMU + Pi Packaging)
+# Pre-Pi Validation Checklist (QEMU + VPS + Pi UEFI Handoff)
 
-This checklist freezes the pre-hardware baseline so Raspberry Pi bring-up can
-focus on hardware-only work.
+This checklist freezes the pre-hardware baseline and the paper-aligned Pi4 UEFI
+handoff flow.
 
 ## Canonical Validation Sequence
 
@@ -14,84 +14,73 @@ make c-edge-controller-verify
 make c-edge-failure-verify
 make c-edge-roundtrip-vps
 make uk-edge-validate
-make pi-image-build
-make pi-boot-media
+make pi-uefi-check
 ```
 
-One-shot equivalent for runtime validations:
+If pftf bundle is available locally:
+
+```bash
+make pi-uefi-handoff UNISPLIT_PI_UEFI_BUNDLE=/abs/path/RPi4_UEFI_Firmware_v1.51.zip
+```
+
+One-shot baseline report:
 
 ```bash
 make prepi-validate
 ```
 
-Pi handoff helpers:
+## Expected Success Signals
 
-```bash
-make pi-readiness-manifest
-make pi-readiness-check
-make pi-boot-payload
-```
-
-## Expected Success Markers
-
-Unikraft serial log (`artifacts/qemu/unikraft_edge_selftest_arm64.log`) must contain:
+QEMU edge self-test log (`artifacts/qemu/unikraft_edge_selftest_arm64.log`) must contain:
 
 - `PI_MARKER_BOOT_START`
-- `PI_MARKER_ARTIFACT_STRATEGY=embedded_edge_k9_superset_v1`
-- `PI_MARKER_CONFIG_OK`
 - `PI_MARKER_SPLIT_DISPATCH_OK split=7`
-- `PI_MARKER_CONTROLLER_OK`
 - `PI_MARKER_BACKEND_INIT_OK`
-- `PI_MARKER_NETWORK_READY`
-- `PI_MARKER_INFER_ATTEMPT`
 - `PI_MARKER_INFER_RESPONSE_OK`
 - `PI_MARKER_FINAL_SUCCESS`
-- `UK_SELFTEST_DONE`
 
-Roundtrip matrix evidence (`artifacts/roundtrip/latest/summary.json`) must include:
+VPS roundtrip matrix (`artifacts/roundtrip/latest/summary.json`) must include:
 
 - `"all_ok": true`
 - split results for `k3`, `k7`, `k8` with `ok=true`
 
+Pi UEFI payload app markers (for hardware day-1 serial):
+
+- `PI_UEFI_POF_BOOT_START`
+- `PI_UEFI_POF_UART_OK`
+- `PI_UEFI_POF_DONE`
+
 ## Artifact Outputs
 
+- Pre-Pi report:
+  - `artifacts/prepi/validation_report.txt`
 - VPS roundtrip evidence:
   - `artifacts/roundtrip/latest/summary.json`
   - `artifacts/roundtrip/latest/cloud.log`
   - `artifacts/roundtrip/latest/split_k3.log`
   - `artifacts/roundtrip/latest/split_k7.log`
   - `artifacts/roundtrip/latest/split_k8.log`
-- Unikraft/QEMU evidence:
+- QEMU Unikraft evidence:
   - `artifacts/qemu/unikraft_edge_selftest_arm64.log`
-- Full pre-Pi report:
-  - `artifacts/prepi/validation_report.txt`
-- Pi image + boot-media outputs:
-  - `artifacts/pi_handoff/latest/images/kernel8.img`
-  - `artifacts/pi_handoff/latest/images/image_build_metadata.txt`
-  - `artifacts/pi_handoff/latest/boot_media/boot/kernel8.img`
-  - `artifacts/pi_handoff/latest/boot_media/boot/config.txt`
-  - `artifacts/pi_handoff/latest/boot_media/boot/cmdline.txt`
-  - `artifacts/pi_handoff/latest/boot_media/BOOT_MEDIA_README.txt`
-  - `artifacts/pi_handoff/latest/boot_media/boot_media_manifest.txt`
+- Pi UEFI handoff outputs:
+  - `artifacts/pi_handoff/latest/images/pi_uefi_payload_metadata.txt`
+  - `artifacts/pi_handoff/latest/images/unikraft_pi_uart_pof_BOOTAA64.EFI`
+  - `artifacts/pi_handoff/latest/boot_media_uefi/EFI/BOOT/BOOTAA64.EFI`
+  - `artifacts/pi_handoff/latest/boot_media_uefi/BOOT_MEDIA_README.txt`
+  - `artifacts/pi_handoff/latest/boot_media_uefi/boot_media_manifest.txt`
+  - `artifacts/pi_handoff/latest/boot_media_uefi/SHA256SUMS.txt`
 
-## Day-1 Endpoint Lock
+## SD Boot Partition Requirements (UEFI path)
 
-- Pi boot cmdline endpoint must be:
-  - `http://204.168.156.245:8000`
-- Request path must be:
-  - `/infer/split`
-- Verify in:
-  - `artifacts/pi_handoff/latest/boot_media/boot/cmdline.txt`
+- FAT16 or FAT32
+- If partitioning from Linux tools: MBR type `0xef`
+- Copy full contents of `artifacts/pi_handoff/latest/boot_media_uefi/` to partition root.
+- Do not add `kernel8.img` or `cmdline.txt` in UEFI mode.
 
-## Pass/Fail Interpretation
+## Deferred to Raspberry Pi Hardware Phase
 
-- Pass: all commands above succeed and required markers/artifact files are present.
-- Fail: any command exits non-zero, any required marker is missing, or expected output files are absent.
-
-## Deferred to Raspberry Pi Hardware Stage
-
-- PMU (`lib-pmu`) real counter validation.
-- INA219 and board-level instrumentation.
-- Hardware-level network behavior verification on real Pi NIC path.
-- NEON optimization and hardware timing/performance characterization.
-- MQTT deployment wiring validation on actual device runtime.
+- Real Pi NIC/lwIP behavior validation on hardware
+- PMU (`lib-pmu`) real counters
+- INA219 instrumentation
+- NEON optimization and hardware timing claims
+- MQTT-on-device wiring/validation

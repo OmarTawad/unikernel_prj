@@ -34,18 +34,17 @@ echo "[check] Verifying core Pi-phase inputs..."
 req_path "edge_native/runtime/include/transport_backend.h"
 req_path "edge_native/runtime/src/transport_backend_factory.c"
 req_path "edge_native/runtime/src/transport_lwip_backend.c"
-req_path "edge_native/unikraft_edge_selftest/Kraftfile"
-req_path "edge_native/unikraft_edge_selftest/Config.uk"
-req_path "edge_native/unikraft_edge_selftest/Makefile.uk"
-req_path "edge_native/unikraft_edge_selftest/generated/embedded_model.c"
-req_path "edge_native/unikraft_edge_selftest/generated/embedded_model.h"
-req_path "scripts/build_pi_image.sh"
-req_path "scripts/prepare_pi_boot_media.sh"
+req_path "edge_native/unikraft_pi_uart_pof/Kraftfile"
+req_path "edge_native/unikraft_pi_uart_pof/Config.uk"
+req_path "edge_native/unikraft_pi_uart_pof/Makefile.uk"
+req_path "edge_native/unikraft_pi_uart_pof/main.c"
+req_path "configs/pi_uefi_bundle.lock.json"
+req_path "scripts/stage_pi_uefi_bundle.sh"
+req_path "scripts/build_pi_uefi_payload.sh"
+req_path "scripts/prepare_pi_uefi_boot_media.sh"
 req_path "docs/protocol.md"
 req_path "docs/pre_pi_validation_checklist.md"
-req_path "configs/pi_edge_runtime.env.example"
-req_path "configs/pi_boot/config.txt"
-req_path "configs/pi_boot/cmdline.txt.template"
+req_path "docs/raspberry_pi_handoff.md"
 
 echo "[check] Verifying exported split artifacts..."
 for split in 0 3 6 7 8 9; do
@@ -58,17 +57,29 @@ mkdir -p "${LATEST_DIR}"
   --repo-root "${ROOT_DIR}" \
   --output "artifacts/pi_handoff/latest/pi_readiness_manifest.json"
 
-echo "[check] Building deterministic Pi image candidate and boot-media layout..."
-"${ROOT_DIR}/scripts/prepare_pi_boot_media.sh"
+echo "[check] Verifying Pi UEFI tooling target sanity..."
+make -C "${ROOT_DIR}" pi-uefi-check >/dev/null
 
 echo "[check] Checking generated validation evidence..."
 req_path "artifacts/roundtrip/latest/summary.json"
 req_path "artifacts/qemu/unikraft_edge_selftest_arm64.log"
 req_path "artifacts/prepi/validation_report.txt"
-req_path "artifacts/pi_handoff/latest/images/kernel8.img"
-req_path "artifacts/pi_handoff/latest/boot_media/boot/kernel8.img"
-req_path "artifacts/pi_handoff/latest/boot_media/boot/config.txt"
-req_path "artifacts/pi_handoff/latest/boot_media/boot/cmdline.txt"
+
+if [[ -n "${UNISPLIT_PI_UEFI_BUNDLE:-}" && -f "${UNISPLIT_PI_UEFI_BUNDLE}" ]]; then
+  echo "[check] Building full Pi UEFI handoff outputs..."
+  make -C "${ROOT_DIR}" pi-uefi-handoff >/dev/null
+  req_path "artifacts/pi_handoff/latest/images/pi_uefi_payload_metadata.txt"
+  req_path "artifacts/pi_handoff/latest/images/unikraft_pi_uart_pof_BOOTAA64.EFI"
+  req_path "artifacts/pi_handoff/latest/boot_media_uefi/RPI_EFI.fd"
+  req_path "artifacts/pi_handoff/latest/boot_media_uefi/start4.elf"
+  req_path "artifacts/pi_handoff/latest/boot_media_uefi/config.txt"
+  req_path "artifacts/pi_handoff/latest/boot_media_uefi/EFI/BOOT/BOOTAA64.EFI"
+  req_path "artifacts/pi_handoff/latest/boot_media_uefi/BOOT_MEDIA_README.txt"
+  req_path "artifacts/pi_handoff/latest/boot_media_uefi/boot_media_manifest.txt"
+  req_path "artifacts/pi_handoff/latest/boot_media_uefi/SHA256SUMS.txt"
+else
+  echo "[check] Skipping full Pi UEFI handoff output checks (UNISPLIT_PI_UEFI_BUNDLE not set)."
+fi
 
 echo "[ok] Pi readiness checks passed."
 echo "[manifest] ${MANIFEST_PATH}"

@@ -1,0 +1,7 @@
+specification: "0.6"
+name: unisplit-uk-pi-uart-pof
+unikraft:
+  version: stable
+targets:
+  - architecture: arm64
+    platform: qemu

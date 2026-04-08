@@ -10,7 +10,7 @@ QEMU validation now and Raspberry Pi bring-up later.
 - Cloud contract-preserving client for `/infer/split`
 - Backend-pluggable transport (`posix`, `ukstub`, `lwip`)
 - Deterministic Unikraft edge self-test app with serial acceptance markers
-- Pi handoff scripts for image candidate build + boot-media layout
+- Pi handoff scripts for paper-aligned Pi4 UEFI bundle + EFI payload assembly
 
 ## Locked Artifact Strategy
 
@@ -36,16 +36,17 @@ Backends:
 - `ukstub`: deterministic synthetic backend for deterministic self-test paths
 - `lwip`: real HTTP sockets backend intended for Unikraft/Pi runtime path
 
-Current day-1 Pi endpoint:
+Current day-1 Pi endpoint target (used after UEFI proof-of-life phase):
 - `http://204.168.156.245:8000`
 
-Backend selection is runtime-configurable in the Unikraft app via command-line
-arguments (see Pi boot cmdline template).
+Backend selection is runtime-configurable in the Unikraft edge app for
+post-boot integration milestones. The initial Pi UEFI bring-up payload focuses
+on UART proof-of-life only.
 
 `lwip` endpoint format expectation right now:
 - `http://<ipv4>:<port>` (IPv4 literal, not DNS hostname)
 
-## Runtime Config Ingestion (Unikraft)
+## Runtime Config Ingestion (Edge App Path)
 
 The Unikraft app consumes runtime options from kernel command-line arguments:
 
@@ -59,12 +60,12 @@ The Unikraft app consumes runtime options from kernel command-line arguments:
 - `--no-quant`
 - `--no-controller`
 
-Template source for Pi bring-up arguments:
+Template source for edge app argument defaults:
 - `configs/pi_boot/cmdline.txt.template`
 - `configs/pi_edge_runtime.env.example`
 
-Override path for custom day-1 builds:
-- `UNISPLIT_PI_ENV_FILE=/abs/path/to/pi_runtime.env make pi-boot-media`
+Override path for host-side edge runtime experiments:
+- `UNISPLIT_PI_ENV_FILE=/abs/path/to/pi_runtime.env make c-edge-roundtrip-vps`
 
 ## Build + Validation Commands
 
@@ -76,11 +77,9 @@ make uk-edge-embed-artifacts
 make uk-edge-build
 make uk-edge-validate
 
-# Build deterministic Pi image candidate
-make pi-image-build
-
-# Prepare explicit boot-media layout
-make pi-boot-media
+# Build/check paper-aligned Pi4 UEFI handoff
+make pi-uefi-check
+make pi-uefi-handoff UNISPLIT_PI_UEFI_BUNDLE=/abs/path/RPi4_UEFI_Firmware_v1.51.zip
 ```
 
 ## Pi Transition Notes

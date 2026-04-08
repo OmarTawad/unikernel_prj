@@ -11,6 +11,7 @@ PYTEST := $(VENV)/bin/pytest
 .PHONY: uk-edge-embed-artifacts uk-edge-build uk-edge-run uk-edge-validate uk-edge-build-pi
 .PHONY: export-edge-c export-edge-c-all c-edge-build c-edge-forward-verify c-edge-forward-verify-all c-edge-quant-verify c-edge-controller-verify c-edge-failure-verify c-edge-roundtrip c-edge-roundtrip-generic c-edge-roundtrip-vps
 .PHONY: prepi-validate pi-readiness-manifest pi-readiness-check pi-boot-payload pi-image-build pi-boot-media
+.PHONY: pi-uefi-check pi-uefi-stage pi-uefi-build pi-uefi-boot-media pi-uefi-handoff
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -125,8 +126,9 @@ uk-edge-embed-artifacts: ## Generate embedded model sources from exported edge_k
 	$(MAKE) export-edge-c-all
 	$(PYTHON) scripts/generate_embedded_edge_model.py --artifact-dir edge_native/artifacts/c_splits/edge_k9 --output-dir edge_native/unikraft_edge_selftest/generated
 
-uk-edge-build-pi: ## Build Pi-target image candidate and record deterministic output path
-	bash scripts/build_pi_image.sh
+uk-edge-build-pi: ## Deprecated alias for Pi handoff build
+	@echo "[deprecated] uk-edge-build-pi is removed for paper-aligned Pi4 UEFI flow. Use: make pi-uefi-build" >&2
+	@exit 1
 
 # ── Edge-Native Runtime (T02a) ──────────────────────────
 
@@ -178,11 +180,37 @@ pi-readiness-check: ## Verify pre-hardware Pi readiness paths and artifacts
 pi-boot-payload: ## Build Pi handoff payload tarball with manifest and C artifacts
 	bash scripts/prepare_pi_boot_payload.sh
 
-pi-image-build: ## Build deterministic Pi image candidate from Unikraft edge runtime app
-	$(MAKE) uk-edge-build-pi
+pi-uefi-check: ## Check tooling + repo inputs for Pi4 UEFI handoff flow
+	@command -v kraft >/dev/null || (echo "Missing kraft" && exit 1)
+	@command -v unzip >/dev/null || (echo "Missing unzip" && exit 1)
+	@command -v sha256sum >/dev/null || (echo "Missing sha256sum" && exit 1)
+	@command -v python3 >/dev/null || (echo "Missing python3" && exit 1)
+	@test -f configs/pi_uefi_bundle.lock.json || (echo "Missing configs/pi_uefi_bundle.lock.json" && exit 1)
+	@test -f edge_native/unikraft_pi_uart_pof/Kraftfile || (echo "Missing edge_native/unikraft_pi_uart_pof/Kraftfile" && exit 1)
+	@rg -n "platform:\\s*qemu" edge_native/unikraft_pi_uart_pof/Kraftfile >/dev/null || (echo "Pi UEFI app Kraftfile must define platform: qemu for EFI-stub flow" && exit 1)
 
-pi-boot-media: ## Prepare explicit boot-media layout with kernel image + boot configs
-	bash scripts/prepare_pi_boot_media.sh
+pi-uefi-stage: ## Stage immutable pinned pftf/RPi4 bundle into handoff tree
+	bash scripts/stage_pi_uefi_bundle.sh
+
+pi-uefi-build: ## Build minimal Unikraft EFI/arm64 UART proof payload
+	bash scripts/build_pi_uefi_payload.sh
+
+pi-uefi-boot-media: ## Inject EFI payload and finalize Pi4 UEFI boot-media tree
+	bash scripts/prepare_pi_uefi_boot_media.sh
+
+pi-uefi-handoff: ## One-shot Pi4 UEFI handoff assembly (stage + build + package)
+	$(MAKE) pi-uefi-check
+	$(MAKE) pi-uefi-stage
+	$(MAKE) pi-uefi-build
+	$(MAKE) pi-uefi-boot-media
+
+pi-image-build: ## Deprecated: direct-firmware kernel8 workflow is removed
+	@echo "[deprecated] pi-image-build is removed for paper-aligned Pi4 UEFI flow. Use: make pi-uefi-build" >&2
+	@exit 1
+
+pi-boot-media: ## Deprecated: direct-firmware boot-media workflow is removed
+	@echo "[deprecated] pi-boot-media is removed for paper-aligned Pi4 UEFI flow. Use: make pi-uefi-boot-media" >&2
+	@exit 1
 
 # ── Cleanup ────────────────────────────────────────────
 

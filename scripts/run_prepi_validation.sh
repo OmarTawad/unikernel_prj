@@ -35,8 +35,18 @@ run_step "Controller sanity checks" "make c-edge-controller-verify"
 run_step "Failure-path hardening checks" "make c-edge-failure-verify"
 run_step "VPS roundtrip matrix evidence" "make c-edge-roundtrip-vps"
 run_step "Unikraft edge selftest validation" "make uk-edge-validate"
-run_step "Pi image candidate build" "make pi-image-build"
-run_step "Pi boot-media layout prep" "make pi-boot-media"
+run_step "Pi UEFI tooling/repo checks" "make pi-uefi-check"
+
+if [[ -n "${UNISPLIT_PI_UEFI_BUNDLE:-}" && -f "${UNISPLIT_PI_UEFI_BUNDLE}" ]]; then
+  run_step "Pi UEFI full handoff assembly" "make pi-uefi-handoff"
+else
+  {
+    echo "============================================================"
+    echo "[SKIP] Pi UEFI full handoff assembly"
+    echo "[REASON] UNISPLIT_PI_UEFI_BUNDLE not set to a local pftf/RPi4 firmware zip."
+    echo "[TIP] Set UNISPLIT_PI_UEFI_BUNDLE and rerun to validate full SD handoff output."
+  } | tee -a "${REPORT}"
+fi
 
 echo "============================================================" | tee -a "${REPORT}"
 echo "[PASS] prepi-validate complete" | tee -a "${REPORT}"

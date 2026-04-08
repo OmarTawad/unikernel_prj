@@ -1,0 +1,16 @@
+{
+  "version": "v1.51",
+  "archive_filename": "RPi4_UEFI_Firmware_v1.51.zip",
+  "source_url": "https://github.com/pftf/RPi4/releases/download/v1.51/RPi4_UEFI_Firmware_v1.51.zip",
+  "sha256": "000b6c518e83bb93262ed6b264a0e9498509c46513dabf58c0dbb73d4c2e7c18",
+  "required_entries": [
+    "RPI_EFI.fd",
+    "config.txt",
+    "fixup4.dat",
+    "start4.elf",
+    "bcm2711-rpi-4-b.dtb",
+    "overlays/miniuart-bt.dtbo",
+    "overlays/upstream-pi4.dtbo",
+    "Readme.md"
+  ]
+}

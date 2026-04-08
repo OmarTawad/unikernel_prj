@@ -1,0 +1,3 @@
+$(eval $(call addlib,apppiuefipof))
+
+APPPIUEFIPOF_SRCS-y += $(APPPIUEFIPOF_BASE)/main.c

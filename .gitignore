@@ -64,5 +64,6 @@ latex.txt
 *.pt
 
 *.json
+!configs/pi_uefi_bundle.lock.json
 
 *.jsonl

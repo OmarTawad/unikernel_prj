@@ -1,147 +1,102 @@
-# Raspberry Pi Handoff (Final Pre-Hardware Package)
+# Raspberry Pi 4 UEFI Handoff (Paper-Aligned)
 
-This document freezes the exact handoff package and day-1 bring-up order.
+This document defines the only valid Pi bring-up handoff flow for this repo.
 
-## 1) VPS-Only Paths
+## 1) Boot Model (Locked)
 
-- Cloud service and deploy:
-  - `unisplit/cloud/`
-  - `deploy/docker-compose.yml`
-  - `deploy/Dockerfile.cloud`
-  - `configs/cloud.yaml`
-- Training/data/profiling:
-  - `unisplit/training/`
-  - `unisplit/profiler/`
-  - `unisplit/experiments/`
-  - `data/`
-  - `checkpoints/`
-  - `profiles/`
-- Python simulator + historical evidence:
-  - `unisplit/edge/`
-  - `configs/edge.yaml`
-  - `artifacts/roundtrip/latest/`
-  - `artifacts/prepi/`
-  - `artifacts/qemu/`
+- Target board: Raspberry Pi 4 Model B
+- Runtime: Unikraft, arm64 EFI payload
+- Boot chain: Pi firmware -> `RPI_EFI.fd` -> `EFI/BOOT/BOOTAA64.EFI`
+- First milestone: UART proof-of-life only
 
-## 2) Pi-Phase Required Paths
+QEMU outputs are pre-hardware validation artifacts and are not valid Pi boot payloads.
 
-- Edge-native runtime + transport abstraction:
-  - `edge_native/runtime/include/`
-  - `edge_native/runtime/src/`
-- Unikraft runtime app:
-  - `edge_native/unikraft_edge_selftest/`
-  - `edge_native/unikraft_edge_selftest/generated/embedded_model.c`
-  - `edge_native/unikraft_edge_selftest/generated/embedded_model.h`
-- C artifact exports:
-  - `edge_native/artifacts/c_splits/edge_k{0,3,6,7,8,9}/`
-- Pi build/boot configs:
-  - `configs/pi_edge_runtime.env.example`
-  - `configs/pi_boot/config.txt`
-  - `configs/pi_boot/cmdline.txt.template`
-- Handoff/build scripts:
-  - `scripts/generate_embedded_edge_model.py`
-  - `scripts/build_pi_image.sh`
-  - `scripts/prepare_pi_boot_media.sh`
-  - `scripts/check_pi_readiness.sh`
-- Contracts/checklists:
-  - `docs/protocol.md`
-  - `docs/edge_native_runtime.md`
-  - `docs/pre_pi_validation_checklist.md`
+Toolchain note:
+- Current Kraft CLI in this repo exposes `qemu/fc/xen` platform targets.
+- For Pi UEFI handoff we build via `qemu/arm64` with `CONFIG_KVM_BOOT_PROTO_EFI_STUB=y`,
+  then package the resulting PE/EFI payload as `EFI/BOOT/BOOTAA64.EFI`.
+- This is a UEFI payload path, not the legacy `kernel8.img` direct-firmware path.
 
-## 3) Locked Artifact Strategy
+## 2) Immutable Firmware Source Rule
 
-**Embedded model strategy is final for day-1 Pi bring-up.**
+Use exactly one pinned pftf bundle source of truth:
 
-- Export source: `edge_native/artifacts/c_splits/edge_k9/` (superset tensors)
-- Generator: `scripts/generate_embedded_edge_model.py`
-- Embedded model loaded in unikernel by `edge_model_load_embedded(...)`
+- Lock file: `configs/pi_uefi_bundle.lock.json`
+- Current pinned bundle:
+  - `RPi4_UEFI_Firmware_v1.51.zip`
+  - SHA256: `000b6c518e83bb93262ed6b264a0e9498509c46513dabf58c0dbb73d4c2e7c18`
 
-No runtime filesystem dependency is required for inference tensors on day-1.
+Guardrail:
+- Extract the bundle as-is.
+- Do not rename or rewrite bundle files.
+- Only add one file afterward: `EFI/BOOT/BOOTAA64.EFI`.
 
-## 4) Image Build and Boot-Media Mapping
-
-### Build image candidate
+## 3) Commands (Canonical)
 
 ```bash
-make pi-image-build
+# 1) Tooling + repo checks
+make pi-uefi-check
+
+# 2) Stage immutable pftf bundle tree
+make pi-uefi-stage UNISPLIT_PI_UEFI_BUNDLE=/abs/path/RPi4_UEFI_Firmware_v1.51.zip
+
+# 3) Build minimal Unikraft UEFI UART proof payload
+make pi-uefi-build
+
+# 4) Assemble final boot-media handoff tree
+make pi-uefi-boot-media
+
+# 5) One-shot
+make pi-uefi-handoff UNISPLIT_PI_UEFI_BUNDLE=/abs/path/RPi4_UEFI_Firmware_v1.51.zip
 ```
 
-Outputs:
-- `artifacts/pi_handoff/latest/images/kernel8.img`
-- `artifacts/pi_handoff/latest/images/image_build_metadata.txt`
-- `artifacts/pi_handoff/latest/images/unisplit-uk-edge-selftest_<plat>-arm64.img`
+Legacy direct-firmware targets are intentionally disabled:
+- `make pi-image-build`
+- `make pi-boot-media`
 
-### Prepare boot-media layout
+## 4) Artifact Outputs
 
-```bash
-make pi-boot-media
-```
+Output root:
+- `artifacts/pi_handoff/latest/boot_media_uefi/`
 
-Outputs:
-- `artifacts/pi_handoff/latest/boot_media/boot/kernel8.img`
-- `artifacts/pi_handoff/latest/boot_media/boot/config.txt`
-- `artifacts/pi_handoff/latest/boot_media/boot/cmdline.txt`
-- `artifacts/pi_handoff/latest/boot_media/BOOT_MEDIA_README.txt`
-- `artifacts/pi_handoff/latest/boot_media/boot_media_manifest.txt`
+Expected key outputs:
+- `artifacts/pi_handoff/latest/images/pi_uefi_payload_metadata.txt`
+- `artifacts/pi_handoff/latest/images/unikraft_pi_uart_pof_BOOTAA64.EFI`
+- `artifacts/pi_handoff/latest/boot_media_uefi/EFI/BOOT/BOOTAA64.EFI`
+- `artifacts/pi_handoff/latest/boot_media_uefi/BOOT_MEDIA_README.txt`
+- `artifacts/pi_handoff/latest/boot_media_uefi/boot_media_manifest.txt`
+- `artifacts/pi_handoff/latest/boot_media_uefi/SHA256SUMS.txt`
 
-Copy the three files under `boot/` into the FAT32 Pi boot partition.
+## 5) SD Boot Partition Requirements
 
-## 5) Runtime Config Ingestion Path
+- Filesystem: FAT16 or FAT32
+- If partitioning from Linux tools, use MBR partition type `0xef`
+- Copy the full tree from:
+  - `artifacts/pi_handoff/latest/boot_media_uefi/`
+  to the root of the Pi boot partition (no extra nesting)
 
-The unikernel app consumes boot cmdline arguments for:
-- backend selection
-- endpoint host:port
-- request path
-- split ID
-- timeout
-- retries
+UEFI mode rules:
+- Do not add `kernel8.img`
+- Do not add `cmdline.txt`
 
-Rendered source values come from:
-- `configs/pi_edge_runtime.env.example`
-- `configs/pi_boot/cmdline.txt.template`
+## 6) Acceptance Stages
 
-Day-1 locked endpoint:
-- `http://204.168.156.245:8000`
-- path: `/infer/split`
+Firmware-stage success:
+- Pi reaches UEFI and attempts to launch `EFI/BOOT/BOOTAA64.EFI`.
 
-lwIP backend endpoint format currently required:
-- `http://<ipv4>:<port>` (IPv4 literal)
+App-stage success (UART markers in order):
+- `PI_UEFI_POF_BOOT_START`
+- `PI_UEFI_POF_UART_OK`
+- `PI_UEFI_POF_DONE`
 
-To override endpoint/backend without editing committed defaults:
-- `UNISPLIT_PI_ENV_FILE=/abs/path/to/pi_runtime.env make pi-boot-media`
+Marker source:
+- `edge_native/unikraft_pi_uart_pof/main.c`
 
-## 6) Day-1 Serial Acceptance Markers
+## 7) What This Handoff Does Not Cover Yet
 
-Required markers on serial console:
-
-- `PI_MARKER_BOOT_START`
-- `PI_MARKER_ARTIFACT_STRATEGY=embedded_edge_k9_superset_v1`
-- `PI_MARKER_CONFIG_OK`
-- `PI_MARKER_SPLIT_DISPATCH_OK`
-- `PI_MARKER_BACKEND_INIT_OK`
-- `PI_MARKER_NETWORK_READY`
-- `PI_MARKER_INFER_ATTEMPT`
-- `PI_MARKER_INFER_RESPONSE_OK`
-- `PI_MARKER_FINAL_SUCCESS`
-
-Any `*_FAIL` marker is an immediate day-1 stop condition.
-
-## 7) Day-1 Bring-Up Order
-
-1. On VPS: verify cloud `/health` and `/ready`.
-2. Run `make prepi-validate` on VPS.
-3. Run `make pi-image-build`.
-4. Run `make pi-boot-media`.
-5. Copy `boot/{kernel8.img,config.txt,cmdline.txt}` to Pi boot partition.
-6. Connect UART + Ethernet, power on Pi, capture serial log.
-7. Confirm required markers through `PI_MARKER_NETWORK_READY`.
-8. Confirm first real `/infer/split` success (`PI_MARKER_INFER_RESPONSE_OK`).
-9. Archive serial logs under `artifacts/pi_handoff/` for comparison.
-
-## 8) Still Hardware-Only
-
-- PMU/lib-pmu validation
-- INA219 instrumentation
-- final on-device network behavior validation
+Deferred until hardware/network phase:
+- Full edge inference runtime on Pi
+- lwIP cloud roundtrip on Pi NIC path
+- PMU/lib-pmu, INA219
 - NEON optimization and hardware timing claims
-- MQTT-on-device deployment validation
+- MQTT-on-device validation
