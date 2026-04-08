@@ -1,11 +1,6 @@
-# UniSplit Raspberry Pi boot configuration
-# Keep UART enabled for day-1 serial bring-up diagnostics.
 arm_64bit=1
 enable_uart=1
-kernel=kernel8.img
-
-# Keep clocks conservative/stable for first bring-up.
+uart_2ndstage=1
+dtoverlay=miniuart-bt
 core_freq=250
-
-# Optional: force console over UART early.
-# dtoverlay=disable-bt
+kernel=kernel8.img

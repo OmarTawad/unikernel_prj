@@ -1,0 +1,8 @@
+config APPPI4PHASE1_DEPENDENCIES
+	bool
+	default y
+	select LIBNOLIBC if !HAVE_LIBC
+
+config APPPI4PHASE1_BOOTINFO_BYPASS
+	bool "Bypass bootinfo for Pi4 phase-1 proof-of-life"
+	default y

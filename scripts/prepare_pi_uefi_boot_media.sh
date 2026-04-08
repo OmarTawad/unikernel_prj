@@ -7,6 +7,7 @@ BOOT_MEDIA_DIR="${LATEST_DIR}/boot_media_uefi"
 IMAGES_DIR="${LATEST_DIR}/images"
 META_FILE="${IMAGES_DIR}/pi_uefi_payload_metadata.txt"
 BASELINE_SUMS="${LATEST_DIR}/UEFI_BUNDLE_BASELINE_SHA256SUMS.txt"
+GATE_REPORT="${LATEST_DIR}/pi_payload_model_blocker_report.txt"
 MANIFEST_FILE="${BOOT_MEDIA_DIR}/boot_media_manifest.txt"
 SHA_FILE="${BOOT_MEDIA_DIR}/SHA256SUMS.txt"
 README_FILE="${BOOT_MEDIA_DIR}/BOOT_MEDIA_README.txt"
@@ -28,12 +29,26 @@ require_dir() {
 require_dir "${BOOT_MEDIA_DIR}"
 require_file "${META_FILE}"
 require_file "${BASELINE_SUMS}"
+require_file "${GATE_REPORT}"
+
+GATE_STATUS="$(grep -E '^status=' "${GATE_REPORT}" | head -n1 | cut -d= -f2- || true)"
+if [[ "${GATE_STATUS}" != "accepted" ]]; then
+  echo "[pi-uefi-media] Refusing packaging because payload model gate status is '${GATE_STATUS:-missing}'." >&2
+  echo "[pi-uefi-media] See: ${GATE_REPORT}" >&2
+  exit 1
+fi
 
 PAYLOAD_PLATFORM="$(grep -E '^platform=' "${META_FILE}" | head -n1 | cut -d= -f2-)"
-PAYLOAD_KRAFT_PLATFORM="$(grep -E '^kraft_platform=' "${META_FILE}" | head -n1 | cut -d= -f2-)"
 PAYLOAD_BOOT_PROTO="$(grep -E '^boot_protocol=' "${META_FILE}" | head -n1 | cut -d= -f2-)"
 PAYLOAD_ARCH="$(grep -E '^arch=' "${META_FILE}" | head -n1 | cut -d= -f2-)"
-PAYLOAD_SRC="$(grep -E '^output_payload=' "${META_FILE}" | head -n1 | cut -d= -f2-)"
+PAYLOAD_SRC="$(grep -E '^source_payload=' "${META_FILE}" | head -n1 | cut -d= -f2-)"
+DTB_SRC="${BOOT_MEDIA_DIR}/bcm2711-rpi-4-b.dtb"
+DTB_DST="${BOOT_MEDIA_DIR}/EFI/BOOT/bcm2711-rpi-4-b.dtb"
+
+if grep -Eq '^kraft_platform=qemu$' "${META_FILE}"; then
+  echo "[pi-uefi-media] Refusing metadata with kraft_platform=qemu." >&2
+  exit 1
+fi
 
 if [[ "${PAYLOAD_PLATFORM}" != "efi" ]]; then
   echo "[pi-uefi-media] Refusing payload with platform=${PAYLOAD_PLATFORM} (expected efi)." >&2
@@ -50,12 +65,18 @@ if [[ "${PAYLOAD_BOOT_PROTO}" != "efi_stub" ]]; then
   exit 1
 fi
 
-if [[ "${PAYLOAD_KRAFT_PLATFORM}" != "qemu" ]]; then
-  echo "[pi-uefi-media] Unexpected kraft platform '${PAYLOAD_KRAFT_PLATFORM}' for this toolchain path." >&2
+if [[ -z "${PAYLOAD_SRC}" ]]; then
+  echo "[pi-uefi-media] Missing source_payload in metadata." >&2
+  exit 1
+fi
+
+if [[ "${PAYLOAD_SRC}" == *qemu* || "${PAYLOAD_SRC}" == *QEMU* ]]; then
+  echo "[pi-uefi-media] Refusing qemu-derived payload source path: ${PAYLOAD_SRC}" >&2
   exit 1
 fi
 
 require_file "${PAYLOAD_SRC}"
+require_file "${DTB_SRC}"
 
 # Guardrail: keep staged pftf tree immutable prior to payload injection.
 while IFS= read -r line; do
@@ -77,6 +98,8 @@ done < "${BASELINE_SUMS}"
 
 mkdir -p "${BOOT_MEDIA_DIR}/EFI/BOOT"
 cp "${PAYLOAD_SRC}" "${BOOT_MEDIA_DIR}/EFI/BOOT/BOOTAA64.EFI"
+cp "${DTB_SRC}" "${DTB_DST}"
+require_file "${DTB_DST}"
 
 if find "${BOOT_MEDIA_DIR}" -maxdepth 2 -type f \( -name 'kernel8.img' -o -name 'cmdline.txt' \) | grep -q .; then
   echo "[pi-uefi-media] UEFI mode forbids kernel8.img/cmdline.txt in handoff output." >&2
@@ -117,12 +140,13 @@ cat > "${MANIFEST_FILE}" <<MAN
 timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 mode=pi4_uefi
 platform=efi
-kraft_platform=${PAYLOAD_KRAFT_PLATFORM}
 boot_protocol=${PAYLOAD_BOOT_PROTO}
 arch=arm64
 boot_media_dir=${BOOT_MEDIA_DIR}
 payload_source=${PAYLOAD_SRC}
 payload_destination=${BOOT_MEDIA_DIR}/EFI/BOOT/BOOTAA64.EFI
+dtb_source=${DTB_SRC}
+dtb_destination=${DTB_DST}
 forbidden_files=kernel8.img,cmdline.txt
 baseline_checksums=${BASELINE_SUMS}
 sha256_sums=${SHA_FILE}
@@ -133,6 +157,7 @@ rm -f "${BOOT_MEDIA_DIR}/.manifest_files.tmp"
 echo "[ok] Pi UEFI boot media prepared."
 echo "[dir ] ${BOOT_MEDIA_DIR}"
 echo "[boot] ${BOOT_MEDIA_DIR}/EFI/BOOT/BOOTAA64.EFI"
+echo "[dtb ] ${DTB_DST}"
 echo "[file] ${README_FILE}"
 echo "[file] ${MANIFEST_FILE}"
 echo "[file] ${SHA_FILE}"

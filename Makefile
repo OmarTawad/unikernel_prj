@@ -11,7 +11,8 @@ PYTEST := $(VENV)/bin/pytest
 .PHONY: uk-edge-embed-artifacts uk-edge-build uk-edge-run uk-edge-validate uk-edge-build-pi
 .PHONY: export-edge-c export-edge-c-all c-edge-build c-edge-forward-verify c-edge-forward-verify-all c-edge-quant-verify c-edge-controller-verify c-edge-failure-verify c-edge-roundtrip c-edge-roundtrip-generic c-edge-roundtrip-vps
 .PHONY: prepi-validate pi-readiness-manifest pi-readiness-check pi-boot-payload pi-image-build pi-boot-media
-.PHONY: pi-uefi-check pi-uefi-stage pi-uefi-build pi-uefi-boot-media pi-uefi-handoff
+.PHONY: pi4-phase1-audit pi4-phase1-build pi4-phase1-stage pi4-phase1-handoff
+.PHONY: pi-uefi-check pi-uefi-stage pi-uefi-build pi-uefi-model-gate pi-uefi-discover-nonkvm pi-uefi-branchb-diagnose pi-uefi-boot-media pi-uefi-handoff
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -180,6 +181,19 @@ pi-readiness-check: ## Verify pre-hardware Pi readiness paths and artifacts
 pi-boot-payload: ## Build Pi handoff payload tarball with manifest and C artifacts
 	bash scripts/prepare_pi_boot_payload.sh
 
+pi4-phase1-audit: ## Audit the local Pi4 platform path and reject QEMU/EFI drift
+	bash scripts/build_pi4_phase1.sh --audit-only
+
+pi4-phase1-build: ## Build direct-boot Pi4 phase-1 image and stage kernel8.img
+	bash scripts/build_pi4_phase1.sh
+
+pi4-phase1-stage: ## Assemble direct-boot Pi4 SD-card tree from a pinned firmware bundle
+	bash scripts/stage_pi4_phase1_sdcard.sh
+
+pi4-phase1-handoff: ## One-shot Pi4 phase-1 build plus SD-card staging
+	$(MAKE) pi4-phase1-build
+	$(MAKE) pi4-phase1-stage
+
 pi-uefi-check: ## Check tooling + repo inputs for Pi4 UEFI handoff flow
 	@command -v kraft >/dev/null || (echo "Missing kraft" && exit 1)
 	@command -v unzip >/dev/null || (echo "Missing unzip" && exit 1)
@@ -193,7 +207,18 @@ pi-uefi-stage: ## Stage immutable pinned pftf/RPi4 bundle into handoff tree
 	bash scripts/stage_pi_uefi_bundle.sh
 
 pi-uefi-build: ## Build minimal Unikraft EFI/arm64 UART proof payload
-	bash scripts/build_pi_uefi_payload.sh
+	@bash scripts/build_pi_uefi_payload.sh
+	@bash scripts/pi_uefi_model_gate.sh || { bash scripts/discover_pi_uefi_nonkvm.sh; exit 1; }
+
+pi-uefi-model-gate: ## Reject Pi handoff when payload model is KVM/QEMU-derived and emit blocker report
+	bash scripts/pi_uefi_model_gate.sh
+
+pi-uefi-discover-nonkvm: ## Discover/prototype true non-KVM Pi UEFI payload path and emit report
+	bash scripts/discover_pi_uefi_nonkvm.sh
+
+pi-uefi-branchb-diagnose: ## Build + gate + forced non-KVM discovery report for Branch-B diagnosis
+	@bash scripts/build_pi_uefi_payload.sh
+	@bash scripts/pi_uefi_model_gate.sh || { bash scripts/discover_pi_uefi_nonkvm.sh; exit 1; }
 
 pi-uefi-boot-media: ## Inject EFI payload and finalize Pi4 UEFI boot-media tree
 	bash scripts/prepare_pi_uefi_boot_media.sh

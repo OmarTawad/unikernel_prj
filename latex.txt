@@ -499,10 +499,11 @@ PyTorch ONNX Runtime server. Communication is over TLS-secured TCP with the
 intermediate activation transmitted as an 8-bit quantised tensor.
 
 \paragraph{Hardware.}
-The edge node is a Raspberry Pi 4 Model B (ARM Cortex-A72, 4 GB LPDDR4) running
-Unikraft on bare-metal via UEFI. We also test on a Raspberry Pi 3B+ (1 GB RAM) to
-evaluate behaviour at tighter budgets. The Docker baseline runs Ubuntu 22.04 with
-the same network stack on the same hardware.
+The edge node is a Raspberry Pi 4 Model B (ARM Cortex-A72, 4 GB LPDDR4) running a
+Unikraft ARM64 image on bare metal. Images are cross-compiled on an x86-64 VPS
+and validated on physical Raspberry Pi hardware. We also test on a Raspberry Pi
+3B+ (1 GB RAM) to evaluate behaviour at tighter budgets. The Docker baseline
+runs Ubuntu 22.04 with the same network stack on the same hardware.
 
 \paragraph{Dataset.}
 CIC-IoT2023~\citep{neto2023ciciot2023} contains 46.6M labelled network flow records.

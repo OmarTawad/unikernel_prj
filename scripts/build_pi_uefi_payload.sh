@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_DIR="${ROOT_DIR}/edge_native/unikraft_pi_uart_pof"
 OUT_DIR="${ROOT_DIR}/artifacts/pi_handoff/latest/images"
 META_FILE="${OUT_DIR}/pi_uefi_payload_metadata.txt"
+SRC_DIR="${OUT_DIR}/payload_source"
 ARCH="arm64"
 PLAT="qemu"
 
@@ -22,6 +23,7 @@ need_cmd python3
 need_cmd rg
 
 mkdir -p "${OUT_DIR}"
+mkdir -p "${SRC_DIR}"
 rm -f "${OUT_DIR}/kernel8.img" "${OUT_DIR}/image_build_metadata.txt"
 find "${OUT_DIR}" -maxdepth 1 -type f \( -name '*_qemu-arm64.img' -o -name '*_qemu-arm64.dbg' -o -name '*_qemu-arm64.bootinfo' \) -delete
 
@@ -53,12 +55,54 @@ if [[ -z "${CFG_FILE}" ]]; then
   echo "[pi-uefi-build] Could not locate generated target config for qemu/arm64." >&2
   exit 1
 fi
+
+python3 - "${CFG_FILE}" <<'PY'
+import pathlib
+import sys
+
+cfg = pathlib.Path(sys.argv[1])
+lines = cfg.read_text(encoding="utf-8").splitlines()
+targets = {
+    "CONFIG_KVM_BOOT_PROTO_EFI_STUB_CMDLINE_FNAME": 'CONFIG_KVM_BOOT_PROTO_EFI_STUB_CMDLINE_FNAME=""',
+    "CONFIG_KVM_BOOT_PROTO_EFI_STUB_INITRD_FNAME": 'CONFIG_KVM_BOOT_PROTO_EFI_STUB_INITRD_FNAME=""',
+    "CONFIG_KVM_BOOT_PROTO_EFI_STUB_DTB_FNAME": 'CONFIG_KVM_BOOT_PROTO_EFI_STUB_DTB_FNAME="bcm2711-rpi-4-b.dtb"',
+}
+seen = {k: False for k in targets}
+out = []
+for line in lines:
+    replaced = False
+    for key, value in targets.items():
+        if line.startswith(key + "="):
+            out.append(value)
+            seen[key] = True
+            replaced = True
+            break
+    if not replaced:
+        out.append(line)
+for key, value in targets.items():
+    if not seen[key]:
+        out.append(value)
+cfg.write_text("\n".join(out) + "\n", encoding="utf-8")
+PY
+
 if ! rg -n '^CONFIG_KVM_BOOT_PROTO_EFI_STUB=y$' "${CFG_FILE}" >/dev/null; then
   echo "[pi-uefi-build] EFI stub was not enabled in ${CFG_FILE}." >&2
   exit 1
 fi
 if ! rg -n '^CONFIG_OPTIMIZE_PIE=y$' "${CFG_FILE}" >/dev/null; then
   echo "[pi-uefi-build] OPTIMIZE_PIE must be enabled for EFI stub in ${CFG_FILE}." >&2
+  exit 1
+fi
+if ! rg -n '^CONFIG_KVM_BOOT_PROTO_EFI_STUB_CMDLINE_FNAME=""$' "${CFG_FILE}" >/dev/null; then
+  echo "[pi-uefi-build] EFI stub cmdline sidecar must be disabled in ${CFG_FILE}." >&2
+  exit 1
+fi
+if ! rg -n '^CONFIG_KVM_BOOT_PROTO_EFI_STUB_INITRD_FNAME=""$' "${CFG_FILE}" >/dev/null; then
+  echo "[pi-uefi-build] EFI stub initrd sidecar must be disabled in ${CFG_FILE}." >&2
+  exit 1
+fi
+if ! rg -n '^CONFIG_KVM_BOOT_PROTO_EFI_STUB_DTB_FNAME="bcm2711-rpi-4-b.dtb"$' "${CFG_FILE}" >/dev/null; then
+  echo "[pi-uefi-build] EFI stub DTB sidecar must be bcm2711-rpi-4-b.dtb in ${CFG_FILE}." >&2
   exit 1
 fi
 
@@ -102,14 +146,22 @@ if [[ ${#EFI_CANDIDATES[@]} -eq 0 ]]; then
   exit 1
 fi
 
-PAYLOAD_SRC="${EFI_CANDIDATES[0]}"
+PAYLOAD_DISCOVERED="${EFI_CANDIDATES[0]}"
 if [[ ${#EFI_CANDIDATES[@]} -gt 1 ]]; then
   for cand in "${EFI_CANDIDATES[@]}"; do
     if [[ "${cand}" =~ [Bb][Oo][Oo][Tt][Aa][Aa]64\.efi$ ]]; then
-      PAYLOAD_SRC="${cand}"
+      PAYLOAD_DISCOVERED="${cand}"
       break
     fi
   done
+fi
+
+PAYLOAD_SRC="${SRC_DIR}/unikraft_pi_uart_pof_efi-arm64.EFI"
+cp "${PAYLOAD_DISCOVERED}" "${PAYLOAD_SRC}"
+
+if [[ "${PAYLOAD_SRC}" == *qemu* || "${PAYLOAD_SRC}" == *QEMU* ]]; then
+  echo "[pi-uefi-build] Refusing qemu-derived source_payload path: ${PAYLOAD_SRC}" >&2
+  exit 1
 fi
 
 PAYLOAD_DST="${OUT_DIR}/unikraft_pi_uart_pof_BOOTAA64.EFI"
@@ -121,11 +173,11 @@ cat > "${META_FILE}" <<META
 timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 app_dir=${APP_DIR}
 platform=efi
-kraft_platform=${PLAT}
 boot_protocol=efi_stub
+handoff_profile=pi4_uefi
 arch=${ARCH}
 source_payload=${PAYLOAD_SRC}
-output_payload=${PAYLOAD_DST}
+staged_payload=${PAYLOAD_DST}
 output_payload_sha256=${PAYLOAD_SHA}
 META
 

@@ -1,0 +1,351 @@
+--- a/plat/kvm/Config.uk
++++ b/plat/kvm/Config.uk
+@@ -39,7 +39,7 @@
+ 
+ config KVM_BOOT_PROTO_LXBOOT
+ 	bool "Lxboot"
+-	depends on KVM_VMM_FIRECRACKER || (KVM_VMM_QEMU && ARCH_ARM_64)
++	depends on KVM_VMM_FIRECRACKER || ((KVM_VMM_QEMU || KVM_VMM_RPI4) && ARCH_ARM_64)
+ 	help
+ 		Linux 64-bit Boot Protocol
+ 
+--- a/plat/kvm/arm/rpi4_bpt64.S
++++ b/plat/kvm/arm/rpi4_bpt64.S
+@@ -19,14 +19,14 @@
+ .align 4
+ .global bpt_unmap_mrd
+ bpt_unmap_mrd:
+-.quad0x0000000000000000
+-.quad0x0000000000000000
+-.quad0x0000000000000000
+-.quad4 * 0x0000000040000000
+-.quad4 * 0x0000000000040000
+-.short0x0000000000000000
+-.short0x0000000000000010
+-.space36
++	.quad	0x0000000000000000
++	.quad	0x0000000000000000
++	.quad	0x0000000000000000
++	.quad	4 * 0x0000000040000000
++	.quad	4 * 0x0000000000040000
++	.short	0x0000000000000000
++	.short	0x0000000000000010
++	.space	36
+ 
+ .global arm64_bpt_l3_pt0
+ 
+@@ -47,22 +47,22 @@
+ .align 12
+ arm64_bpt_l2_pt0:
+ 	ur_pte  arm64_bpt_l1_pt0, PTE_TYPE_TABLE
+-pte_fill0x0000000040000000, 1, 2, PTE_BLOCK_NORMAL_RW
+-pte_fill0x0000000080000000, 1, 2, PTE_BLOCK_NORMAL_RW
++	pte_fill	0x0000000040000000, 1, 2, PTE_BLOCK_NORMAL_RW
++	pte_fill	0x0000000080000000, 1, 2, PTE_BLOCK_NORMAL_RW
+ 	ur_pte  arm64_bpt_l1_pt3, PTE_TYPE_TABLE
+ 	pte_zero, 508
+ 
+ #if CONFIG_PAGING
+ .align 12
+ arm64_bpt_l2_pt511:
+-pte_fill0x0000000000000000, 512, 2, PTE_BLOCK_NORMAL_RW
++	pte_fill	0x0000000000000000, 512, 2, PTE_BLOCK_NORMAL_RW
+ #endif
+ 
+ /* L1: 0-1GiB (2MiB/entry) - kernel fine pages + RAM */
+ .align 12
+ arm64_bpt_l1_pt0:
+ 	ur_pte  arm64_bpt_l0_pt0, PTE_TYPE_TABLE
+-pte_fill0x0000000000200000, 511, 1, PTE_BLOCK_NORMAL_RWX
++	pte_fill	0x0000000000200000, 511, 1, PTE_BLOCK_NORMAL_RWX
+ 
+ /* L1: 3-4GiB (2MiB/entry)
+  * 0xC0000000-0xFBFFFFFF RAM (240x2M)
+@@ -70,11 +70,11 @@
+  */
+ .align 12
+ arm64_bpt_l1_pt3:
+-pte_fill0x00000000c0000000, 240, 1, PTE_BLOCK_NORMAL_RW
+-pte_fill0x00000000fc000000,  32, 1, PTE_BLOCK_DEVICE_nGnRnE
++	pte_fill	0x00000000c0000000, 240, 1, PTE_BLOCK_NORMAL_RW
++	pte_fill	0x00000000fc000000,  32, 1, PTE_BLOCK_DEVICE_nGnRnE
+ 
+ /* L0: 0-2MiB (4KiB/entry) kernel pages */
+ .align 12
+ .globl arm64_bpt_l0_pt0
+ arm64_bpt_l0_pt0:
+-pte_fill0x0000000000000000, 512, 0, PTE_PAGE_NORMAL_RWX
++	pte_fill	0x0000000000000000, 512, 0, PTE_PAGE_NORMAL_RWX
+--- a/plat/kvm/arm/entry64.S
++++ b/plat/kvm/arm/entry64.S
+@@ -53,7 +53,8 @@
+ 	mov x25, x0 /* preserve dtb addr */
+ #endif
+ 
+-#if CONFIG_KVM_VMM_RPI4
+-	bl	rpi4_asm_early_uart_marker
++#if CONFIG_KVM_VMM_RPI4
++	ur_ldr	x0, rpi4_asm_entry_marker_msg
++	bl	rpi4_asm_uart_puts
+ #endif
+ 
+ #ifdef CONFIG_FPSIMD
+@@ -132,17 +133,27 @@
+ 	/* Enable the mmu */
+ 	bl start_mmu
+ 
++#if CONFIG_KVM_VMM_RPI4
++	ur_ldr	x0, rpi4_asm_post_mmu_marker_msg
++	bl	rpi4_asm_uart_puts
++#endif
++
+ 	/* Jump to early init */
+ #if defined(CONFIG_KVM_BOOT_PROTO_LXBOOT)
+ 	mov x0, x25      /* dtb in x0 */
+@@ -143,8 +149,17 @@
++#if CONFIG_KVM_VMM_RPI4
++	ur_ldr	x0, rpi4_asm_pre_bootinfo_call_marker_msg
++	bl	rpi4_asm_uart_puts
++	mov	x0, x25
++#endif
+ 	bl	ukplat_bootinfo_fdt_setup
++#if CONFIG_KVM_VMM_RPI4
++	ur_ldr	x0, rpi4_asm_post_bootinfo_marker_msg
++	bl	rpi4_asm_uart_puts
++#endif
+ 	b	_ukplat_entry
+ END(_libkvmplat_entry)
+ 
+ #if CONFIG_KVM_VMM_RPI4
+-rpi4_asm_early_uart_marker:
+-	ur_ldr	x0, rpi4_asm_early_uart_marker_msg
++rpi4_asm_uart_puts:
+ 	movz	x1, #0x1000
+ 	movk	x1, #0xfe20, lsl #16
+ 1:
+@@ -159,7 +164,9 @@
+ 	ret
+ 
+ 	.section .rodata
+-rpi4_asm_early_uart_marker_msg:
++rpi4_asm_entry_marker_msg:
+ 	.asciz "UNISPLIT_RPI4_P1_ASM_ENTRY\r\n"
++rpi4_asm_post_mmu_marker_msg:
++	.asciz "UNISPLIT_RPI4_P1_POST_MMU\r\n"
++rpi4_asm_pre_bootinfo_call_marker_msg:
++	.asciz "UNISPLIT_RPI4_P1_PRE_BOOTINFO_CALL\r\n"
++rpi4_asm_post_bootinfo_marker_msg:
++	.asciz "UNISPLIT_RPI4_P1_POST_BOOTINFO\r\n"
+ 	.text
+ #endif
+--- a/plat/kvm/arm/setup.c
++++ b/plat/kvm/arm/setup.c
+@@ -49,6 +49,46 @@
+ 
+ smccc_conduit_fn_t smccc_psci_call;
+ 
++#if CONFIG_KVM_VMM_RPI4
++/* Bypass console registration so we can prove control reached _ukplat_entry()
++ * even when the DTB lacks a usable stdout-path for early console setup.
++ */
++#define RPI4_EMERGENCY_PL011_BASE 0xFE201000UL
++#define RPI4_EMERGENCY_UARTDR_OFFSET 0x00UL
++#define RPI4_EMERGENCY_UARTFR_OFFSET 0x18UL
++#define RPI4_EMERGENCY_FR_TXFF (1U << 5)
++#define RPI4_P1_EARLY_MARKER "UNISPLIT_RPI4_P1_EARLY_ENTRY\n"
++
++static inline __u16 rpi4_emergency_uart_read(__u64 offset)
++{
++	return *((volatile __u16 *)(RPI4_EMERGENCY_PL011_BASE + offset));
++}
++
++static inline void rpi4_emergency_uart_write(__u64 offset, __u16 value)
++{
++	*((volatile __u16 *)(RPI4_EMERGENCY_PL011_BASE + offset)) = value;
++}
++
++static void rpi4_emergency_uart_putc(char ch)
++{
++	while (rpi4_emergency_uart_read(RPI4_EMERGENCY_UARTFR_OFFSET) &
++	       RPI4_EMERGENCY_FR_TXFF)
++		;
++
++	rpi4_emergency_uart_write(RPI4_EMERGENCY_UARTDR_OFFSET,
++				  (__u16)(ch & 0xff));
++}
++
++static void rpi4_emergency_uart_puts(const char *s)
++{
++	while (*s) {
++		if (*s == '\n')
++			rpi4_emergency_uart_putc('\r');
++		rpi4_emergency_uart_putc(*s++);
++	}
++}
++#endif /* CONFIG_KVM_VMM_RPI4 */
++
+ #ifdef CONFIG_UKPLAT_ACPI
+ static int get_psci_method(struct ukplat_bootinfo *bi __unused)
+ {
+@@ -126,6 +166,10 @@
+ 	void *bstack;
+ 	int rc;
+ 
++#if CONFIG_KVM_VMM_RPI4
++	rpi4_emergency_uart_puts(RPI4_P1_EARLY_MARKER);
++#endif /* CONFIG_KVM_VMM_RPI4 */
++
+ 	bi = ukplat_bootinfo_get();
+ 	if (unlikely(!bi))
+ 		UK_CRASH("Could not retrieve bootinfo\n");
+@@ -186,8 +230,13 @@
+ #endif /* CONFIG_HAVE_SMP */
+ 
+ 	rc = get_psci_method(bi);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_UKPLAT_LCPU_MAXCOUNT == 1)
++	if (unlikely(rc < 0))
++		smccc_psci_call = NULL;
++#else
+ 	if (unlikely(rc < 0))
+ 		UK_CRASH("Failed to get PSCI method: %d.\n", rc);
++#endif /* CONFIG_KVM_VMM_RPI4 && CONFIG_UKPLAT_LCPU_MAXCOUNT == 1 */
+ 
+	/*
+ 	 * Switch away from the bootstrap stack as early as possible.
+--- a/plat/common/bootinfo_fdt.c
++++ b/plat/common/bootinfo_fdt.c
+@@ -9,7 +9,102 @@
+ #include <uk/plat/common/sections.h>
+ #include <libfdt.h>
+ 
++#if CONFIG_KVM_VMM_RPI4
++#define RPI4_BOOTINFO_PL011_BASE 0xFE201000UL
++#define RPI4_BOOTINFO_UARTDR_OFFSET 0x00UL
++#define RPI4_BOOTINFO_UARTFR_OFFSET 0x18UL
++#define RPI4_BOOTINFO_FR_TXFF (1U << 5)
++#define RPI4_P1_BOOTINFO_ENTRY_MARKER "UNISPLIT_RPI4_P1_BOOTINFO_ENTRY\n"
++#define RPI4_P1_BOOTINFO_DONE_MARKER "UNISPLIT_RPI4_P1_BOOTINFO_DONE\n"
++#define RPI4_P1_BOOTINFO_CRASH_PREFIX "UNISPLIT_RPI4_P1_BOOTINFO_CRASH: "
++#define RPI4_P1_DTB_PTR_PREFIX "UNISPLIT_RPI4_P1_DTB_PTR=0x"
++#define RPI4_P1_DTB_MAGIC_PREFIX "UNISPLIT_RPI4_P1_DTB_MAGIC=0x"
++#define RPI4_P1_DTB_TOTALSIZE_PREFIX "UNISPLIT_RPI4_P1_DTB_TOTALSIZE=0x"
++#define RPI4_P1_BOOTINFO_HEADER_OK "UNISPLIT_RPI4_P1_BOOTINFO_HEADER_OK\n"
++#define RPI4_P1_FDT_MRD_BEFORE "UNISPLIT_RPI4_P1_FDT_MRD_BEFORE\n"
++#define RPI4_P1_FDT_MRD_AFTER "UNISPLIT_RPI4_P1_FDT_MRD_AFTER\n"
++#define RPI4_P1_MEM_MRD_BEFORE "UNISPLIT_RPI4_P1_MEM_MRD_BEFORE\n"
++#define RPI4_P1_MEM_MRD_AFTER "UNISPLIT_RPI4_P1_MEM_MRD_AFTER\n"
++#define RPI4_P1_INITRD_MRD_BEFORE "UNISPLIT_RPI4_P1_INITRD_MRD_BEFORE\n"
++#define RPI4_P1_INITRD_MRD_AFTER "UNISPLIT_RPI4_P1_INITRD_MRD_AFTER\n"
++#define RPI4_P1_CMDL_BEFORE "UNISPLIT_RPI4_P1_CMDL_BEFORE\n"
++#define RPI4_P1_CMDL_AFTER "UNISPLIT_RPI4_P1_CMDL_AFTER\n"
++#define RPI4_P1_MEM_NODE_FOUND "UNISPLIT_RPI4_P1_MEM_NODE_FOUND\n"
++#define RPI4_P1_MEM_REG_OK "UNISPLIT_RPI4_P1_MEM_REG_OK\n"
++#define RPI4_P1_MEM_LOW_DONE "UNISPLIT_RPI4_P1_MEM_LOW_DONE\n"
++
++static inline __u16 rpi4_bootinfo_uart_read(__u64 offset)
++{
++	return *((volatile __u16 *)(RPI4_BOOTINFO_PL011_BASE + offset));
++}
++
++static inline void rpi4_bootinfo_uart_write(__u64 offset, __u16 value)
++{
++	*((volatile __u16 *)(RPI4_BOOTINFO_PL011_BASE + offset)) = value;
++}
++
++static void rpi4_bootinfo_uart_putc(char ch)
++{
++	while (rpi4_bootinfo_uart_read(RPI4_BOOTINFO_UARTFR_OFFSET) &
++	       RPI4_BOOTINFO_FR_TXFF)
++		;
++
++	rpi4_bootinfo_uart_write(RPI4_BOOTINFO_UARTDR_OFFSET,
++				 (__u16)(ch & 0xff));
++}
++
++static void rpi4_bootinfo_uart_puts(const char *s)
++{
++	while (*s) {
++		if (*s == '\n')
++			rpi4_bootinfo_uart_putc('\r');
++		rpi4_bootinfo_uart_putc(*s++);
++	}
++}
++
++static void rpi4_bootinfo_uart_put_hex_nibble(__u8 nibble)
++{
++	static const char hex[] = "0123456789abcdef";
++
++	rpi4_bootinfo_uart_putc(hex[nibble & 0xf]);
++}
++
++static void rpi4_bootinfo_uart_put_hex32(__u32 value)
++{
++	int shift;
++
++	for (shift = 28; shift >= 0; shift -= 4)
++		rpi4_bootinfo_uart_put_hex_nibble((__u8)(value >> shift));
++}
++
++static void rpi4_bootinfo_uart_put_hex64(__u64 value)
++{
++	int shift;
++
++	for (shift = 60; shift >= 0; shift -= 4)
++		rpi4_bootinfo_uart_put_hex_nibble((__u8)(value >> shift));
++}
++
++static __u32 rpi4_bootinfo_read_be32(const volatile __u8 *ptr)
++{
++	return ((__u32)ptr[0] << 24) |
++	       ((__u32)ptr[1] << 16) |
++	       ((__u32)ptr[2] << 8) |
++	       (__u32)ptr[3];
++}
++
++static void __noreturn rpi4_bootinfo_crash(const char *s)
++{
++	rpi4_bootinfo_uart_puts(RPI4_P1_BOOTINFO_CRASH_PREFIX);
++	rpi4_bootinfo_uart_puts(s);
++	rpi4_bootinfo_uart_puts("\n");
++	ukplat_crash();
++}
++
++#define ukplat_bootinfo_crash(s)		rpi4_bootinfo_crash(s)
++#else
+ #define ukplat_bootinfo_crash(s)		ukplat_crash()
++#endif
+ 
+ static void fdt_bootinfo_mem_mrd(struct ukplat_bootinfo *bi, void *fdtp)
+ {
+@@ -173,6 +255,22 @@
+ {
+ 	struct ukplat_bootinfo *bi;
++#if CONFIG_KVM_VMM_RPI4
++	volatile __u8 *fdt_bytes = (volatile __u8 *)fdtp;
++#endif
+ 
++#if CONFIG_KVM_VMM_RPI4
++	rpi4_bootinfo_uart_puts(RPI4_P1_BOOTINFO_ENTRY_MARKER);
++	rpi4_bootinfo_uart_puts(RPI4_P1_DTB_PTR_PREFIX);
++	rpi4_bootinfo_uart_put_hex64((__u64)(__uptr)fdtp);
++	rpi4_bootinfo_uart_puts("\n");
++	rpi4_bootinfo_uart_puts(RPI4_P1_DTB_MAGIC_PREFIX);
++	rpi4_bootinfo_uart_put_hex32(rpi4_bootinfo_read_be32(fdt_bytes));
++	rpi4_bootinfo_uart_puts("\n");
++	rpi4_bootinfo_uart_puts(RPI4_P1_DTB_TOTALSIZE_PREFIX);
++	rpi4_bootinfo_uart_put_hex32(rpi4_bootinfo_read_be32(fdt_bytes + 4));
++	rpi4_bootinfo_uart_puts("\n");
++#endif
++
+ 	bi = ukplat_bootinfo_get();
+ 	if (unlikely(!bi))
+ 		ukplat_bootinfo_crash("Invalid bootinfo");
+@@ -187,4 +240,8 @@
+ 	fdt_bootinfo_cmdl_init(bi, fdtp);
+ 
+ 	bi->dtb = (__u64)fdtp;
++
++#if CONFIG_KVM_VMM_RPI4
++	rpi4_bootinfo_uart_puts(RPI4_P1_BOOTINFO_DONE_MARKER);
++#endif
+ }
