@@ -1,0 +1,94 @@
+--- a/plat/kvm/arm/entry64.S
++++ b/plat/kvm/arm/entry64.S
+@@ -41,7 +41,8 @@
+ /* Prefer using in-image stack, to avoid conflicts when unmapping is done by
+  * paging_init (it invalidates our stack)
+  */
+-.section .bss
++.section .data.bootstack, "aw", %progbits
++.align 16
+ .space BOOTSTACK_SIZE
+ lcpu_bootstack:
+ 
+@@ -138,8 +139,17 @@
+ 		bl	rpi4_asm_uart_puts
+ 	#endif
+ 
+-	#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE1_BOOTINFO_BYPASS
+-		b	unisplit_pi4_phase1_bypass_entry
++	#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++		/* The direct Pi boot path must not depend on pre-zeroed .bss. */
++		ur_ldr	x0, __bss_start
++		ur_ldr	x1, _end
++		cmp	x0, x1
++		b.hs	1f
++0:
++		str	xzr, [x0], #8
++		cmp	x0, x1
++		b.lo	0b
++1:
+ 	#endif
+ 
+ 		/* Jump to early init */
+@@ -149,16 +159,24 @@
+ 	ur_ldr  x0, _dtb /* dtb in x0 */
+ #endif
+ #if CONFIG_KVM_VMM_RPI4
+-	ur_ldr	x0, rpi4_asm_pre_bootinfo_call_marker_msg
+-	bl	rpi4_asm_uart_puts
+-	mov	x0, x25
++#if CONFIG_APPPI4PHASE2_BOOTRESTORE
++		ur_ldr	x0, rpi4_asm_p2_pre_bootinfo_call_marker_msg
++#else
++		ur_ldr	x0, rpi4_asm_pre_bootinfo_call_marker_msg
++#endif
++		bl	rpi4_asm_uart_puts
++		mov	x0, x25
+ #endif
+-	bl	ukplat_bootinfo_fdt_setup
++		bl	ukplat_bootinfo_fdt_setup
+ #if CONFIG_KVM_VMM_RPI4
+-	ur_ldr	x0, rpi4_asm_post_bootinfo_marker_msg
+-	bl	rpi4_asm_uart_puts
++#if CONFIG_APPPI4PHASE2_BOOTRESTORE
++		ur_ldr	x0, rpi4_asm_p2_post_bootinfo_marker_msg
++#else
++		ur_ldr	x0, rpi4_asm_post_bootinfo_marker_msg
++#endif
++		bl	rpi4_asm_uart_puts
+ #endif
+-	b	_ukplat_entry
++		b	_ukplat_entry
+ END(_libkvmplat_entry)
+ 
+ #if CONFIG_KVM_VMM_RPI4
+@@ -182,8 +200,12 @@
+ rpi4_asm_post_mmu_marker_msg:
+ 	.asciz "UNISPLIT_RPI4_P1_POST_MMU\r\n"
+ rpi4_asm_pre_bootinfo_call_marker_msg:
+-	.asciz "UNISPLIT_RPI4_P1_PRE_BOOTINFO_CALL\r\n"
++		.asciz "UNISPLIT_RPI4_P1_PRE_BOOTINFO_CALL\r\n"
++rpi4_asm_p2_pre_bootinfo_call_marker_msg:
++		.asciz "UNISPLIT_RPI4_P2_PRE_BOOTINFO_CALL\r\n"
+ rpi4_asm_post_bootinfo_marker_msg:
+-	.asciz "UNISPLIT_RPI4_P1_POST_BOOTINFO\r\n"
+-	.text
++		.asciz "UNISPLIT_RPI4_P1_POST_BOOTINFO\r\n"
++rpi4_asm_p2_post_bootinfo_marker_msg:
++		.asciz "UNISPLIT_RPI4_P2_POST_BOOTINFO\r\n"
++		.text
+ #endif
+--- a/plat/kvm/arm/setup.c
++++ b/plat/kvm/arm/setup.c
+@@ -57,7 +57,11 @@
+ #define RPI4_EMERGENCY_UARTDR_OFFSET 0x00UL
+ #define RPI4_EMERGENCY_UARTFR_OFFSET 0x18UL
+ #define RPI4_EMERGENCY_FR_TXFF (1U << 5)
++#if CONFIG_APPPI4PHASE2_BOOTRESTORE
++#define RPI4_P1_EARLY_MARKER "UNISPLIT_RPI4_P2_UKPLAT_ENTRY\n"
++#else
+ #define RPI4_P1_EARLY_MARKER "UNISPLIT_RPI4_P1_EARLY_ENTRY\n"
++#endif
+ 
+ static inline __u16 rpi4_emergency_uart_read(__u64 offset)
+ {

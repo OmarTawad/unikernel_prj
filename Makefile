@@ -12,6 +12,7 @@ PYTEST := $(VENV)/bin/pytest
 .PHONY: export-edge-c export-edge-c-all c-edge-build c-edge-forward-verify c-edge-forward-verify-all c-edge-quant-verify c-edge-controller-verify c-edge-failure-verify c-edge-roundtrip c-edge-roundtrip-generic c-edge-roundtrip-vps
 .PHONY: prepi-validate pi-readiness-manifest pi-readiness-check pi-boot-payload pi-image-build pi-boot-media
 .PHONY: pi4-phase1-audit pi4-phase1-build pi4-phase1-stage pi4-phase1-handoff
+.PHONY: pi4-phase2-audit pi4-phase2-build pi4-phase2-stage pi4-phase2-handoff
 .PHONY: pi-uefi-check pi-uefi-stage pi-uefi-build pi-uefi-model-gate pi-uefi-discover-nonkvm pi-uefi-branchb-diagnose pi-uefi-boot-media pi-uefi-handoff
 
 help: ## Show this help
@@ -193,6 +194,19 @@ pi4-phase1-stage: ## Assemble direct-boot Pi4 SD-card tree from a pinned firmwar
 pi4-phase1-handoff: ## One-shot Pi4 phase-1 build plus SD-card staging
 	$(MAKE) pi4-phase1-build
 	$(MAKE) pi4-phase1-stage
+
+pi4-phase2-audit: ## Audit the frozen-source Pi4 phase-2 boot-restore lane
+	bash scripts/build_pi4_phase2.sh --audit-only
+
+pi4-phase2-build: ## Build direct-boot Pi4 phase-2 image from the frozen phase-1 source snapshot
+	bash scripts/build_pi4_phase2.sh
+
+pi4-phase2-stage: ## Assemble direct-boot Pi4 phase-2 SD-card tree from a pinned firmware bundle
+	bash scripts/stage_pi4_phase2_sdcard.sh
+
+pi4-phase2-handoff: ## One-shot Pi4 phase-2 build plus SD-card staging
+	$(MAKE) pi4-phase2-build
+	$(MAKE) pi4-phase2-stage
 
 pi-uefi-check: ## Check tooling + repo inputs for Pi4 UEFI handoff flow
 	@command -v kraft >/dev/null || (echo "Missing kraft" && exit 1)

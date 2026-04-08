@@ -1,0 +1,3 @@
+$(eval $(call addlib,apppi4phase2))
+
+APPPI4PHASE2_SRCS-y += $(APPPI4PHASE2_BASE)/main.c

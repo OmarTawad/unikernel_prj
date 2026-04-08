@@ -1,0 +1,8 @@
+config APPPI4PHASE2_DEPENDENCIES
+	bool
+	default y
+	select LIBNOLIBC if !HAVE_LIBC
+
+config APPPI4PHASE2_BOOTRESTORE
+	bool "Restore the normal bootinfo handoff for Pi4 phase-2 bring-up"
+	default y

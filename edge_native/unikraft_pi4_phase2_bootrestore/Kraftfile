@@ -1,0 +1,4 @@
+specification: "0.6"
+name: unisplit-uk-pi4-phase2-bootrestore
+unikraft:
+  version: stable

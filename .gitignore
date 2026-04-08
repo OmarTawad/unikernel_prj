@@ -58,6 +58,7 @@ artifacts/roundtrip/latest/
 artifacts/prepi/
 artifacts/pi_handoff/
 artifacts/pi_phase1/
+artifacts/pi_phase2/
 
 
 latex.txt
