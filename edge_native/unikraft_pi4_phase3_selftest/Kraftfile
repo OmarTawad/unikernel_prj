@@ -1,0 +1,4 @@
+specification: "0.6"
+name: unisplit-uk-pi4-phase3-selftest
+unikraft:
+  version: stable

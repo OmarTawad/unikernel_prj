@@ -1,0 +1,9 @@
+config APPPI4PHASE3_DEPENDENCIES
+	bool
+	default y
+	select LIBNOLIBC if !HAVE_LIBC
+	select FPSIMD
+
+config APPPI4PHASE3_SELFTEST
+	bool "Run the minimal embedded-model self-test for Pi4 phase-3"
+	default y

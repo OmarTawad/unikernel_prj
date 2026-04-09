@@ -1,0 +1,2471 @@
+--- a/plat/kvm/arm/entry64.S
++++ b/plat/kvm/arm/entry64.S
+@@ -139,7 +139,7 @@
+ 		bl	rpi4_asm_uart_puts
+ 	#endif
+ 
+-	#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++	#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 		/* The direct Pi boot path must not depend on pre-zeroed .bss. */
+ 		ur_ldr	x0, __bss_start
+ 		ur_ldr	x1, _end
+@@ -159,7 +159,7 @@
+ 	ur_ldr  x0, _dtb /* dtb in x0 */
+ #endif
+ #if CONFIG_KVM_VMM_RPI4
+-#if CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST
+ 		ur_ldr	x0, rpi4_asm_p2_pre_bootinfo_call_marker_msg
+ #else
+ 		ur_ldr	x0, rpi4_asm_pre_bootinfo_call_marker_msg
+@@ -169,7 +169,7 @@
+ #endif
+ 		bl	ukplat_bootinfo_fdt_setup
+ #if CONFIG_KVM_VMM_RPI4
+-#if CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST
+ 		ur_ldr	x0, rpi4_asm_p2_post_bootinfo_marker_msg
+ #else
+ 		ur_ldr	x0, rpi4_asm_post_bootinfo_marker_msg
+--- a/plat/kvm/arm/setup.c
++++ b/plat/kvm/arm/setup.c
+@@ -57,7 +57,7 @@
+ #define RPI4_EMERGENCY_UARTDR_OFFSET 0x00UL
+ #define RPI4_EMERGENCY_UARTFR_OFFSET 0x18UL
+ #define RPI4_EMERGENCY_FR_TXFF (1U << 5)
+-#if CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST
+ #define RPI4_P1_EARLY_MARKER "UNISPLIT_RPI4_P2_UKPLAT_ENTRY\n"
+ #define RPI4_P2_BS1_BEFORE_BOOTSTACK_ALLOC "UNISPLIT_RPI4_P2_BS1_BEFORE_BOOTSTACK_ALLOC\n"
+ #define RPI4_P2_BS1_STACK_SIZE_PREFIX "UNISPLIT_RPI4_P2_BS1_STACK_SIZE=0x"
+@@ -90,9 +90,19 @@
+ #define RPI4_P2_BS3_BEFORE_ALLOC_CALL "UNISPLIT_RPI4_P2_BS3_BEFORE_ALLOC_CALL\n"
+ #define RPI4_P2_BS3_ALLOC_RET_PREFIX "UNISPLIT_RPI4_P2_BS3_ALLOC_RET=0x"
+ #define RPI4_P2_BS4_BEFORE_FAIL_BOOTSTACK_ALLOC "UNISPLIT_RPI4_P2_BS4_BEFORE_FAIL_BOOTSTACK_ALLOC\n"
++#define RPI4_P2_S0_BEFORE_BOOTINFO_GET "UNISPLIT_RPI4_P2_S0_BEFORE_BOOTINFO_GET\n"
++#define RPI4_P2_S0_AFTER_BOOTINFO_GET "UNISPLIT_RPI4_P2_S0_AFTER_BOOTINFO_GET\n"
++#define RPI4_P2_S0_BOOTINFO_PTR_PREFIX "UNISPLIT_RPI4_P2_S0_BOOTINFO_PTR=0x"
++#define RPI4_P2_S0_BEFORE_EARLY_INIT "UNISPLIT_RPI4_P2_S0_BEFORE_EARLY_INIT\n"
+ #define RPI4_P2_S1_AFTER_EARLY_INIT "UNISPLIT_RPI4_P2_S1_AFTER_EARLY_INIT\n"
+ #define RPI4_P2_S2_AFTER_BOOTSTACK_SETUP "UNISPLIT_RPI4_P2_S2_AFTER_BOOTSTACK_SETUP\n"
+ #define RPI4_P2_S3_AFTER_PAGING_INIT "UNISPLIT_RPI4_P2_S3_AFTER_PAGING_INIT\n"
++#define RPI4_P2_IQ1_BEFORE_POST_PAGING_STEP "UNISPLIT_RPI4_P2_IQ1_BEFORE_POST_PAGING_STEP\n"
++#define RPI4_P2_IQ1_AFTER_POST_PAGING_STEP "UNISPLIT_RPI4_P2_IQ1_AFTER_POST_PAGING_STEP\n"
++#define RPI4_P2_IQ2_BEFORE_IRQ_PROBE "UNISPLIT_RPI4_P2_IQ2_BEFORE_IRQ_PROBE\n"
++#define RPI4_P2_IQ2_AFTER_IRQ_PROBE "UNISPLIT_RPI4_P2_IQ2_AFTER_IRQ_PROBE\n"
++#define RPI4_P2_IQ2_IRQ_RC_PREFIX "UNISPLIT_RPI4_P2_IQ2_IRQ_RC=0x"
++#define RPI4_P2_IQ_FAIL_IRQ_PROBE "UNISPLIT_RPI4_P2_IQ_FAIL_IRQ_PROBE\n"
+ #define RPI4_P2_S4_AFTER_IRQ_INIT "UNISPLIT_RPI4_P2_S4_AFTER_IRQ_INIT\n"
+ #define RPI4_P2_S5_AFTER_LCPU_INIT "UNISPLIT_RPI4_P2_S5_AFTER_LCPU_INIT\n"
+ #define RPI4_P2_S6_AFTER_PLATFORM_SETUP "UNISPLIT_RPI4_P2_S6_AFTER_PLATFORM_SETUP\n"
+@@ -163,7 +173,7 @@
+ 		rpi4_emergency_uart_put_hex_nibble((__u8)(value >> shift));
+ }
+ 
+-#if CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST
+ static void rpi4_emergency_uart_put_mrd(const struct ukplat_memregion_desc *mrd,
+ 					const char *base_prefix,
+ 					const char *len_prefix,
+@@ -269,16 +279,26 @@
+ 	rpi4_emergency_uart_puts(RPI4_P1_EARLY_MARKER);
+ #endif /* CONFIG_KVM_VMM_RPI4 */
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_emergency_uart_puts(RPI4_P2_S0_BEFORE_BOOTINFO_GET);
++#endif
+ 	bi = ukplat_bootinfo_get();
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_emergency_uart_puts(RPI4_P2_S0_AFTER_BOOTINFO_GET);
++	rpi4_emergency_uart_puts(RPI4_P2_S0_BOOTINFO_PTR_PREFIX);
++	rpi4_emergency_uart_put_hex64((__u64)(__uptr)bi);
++	rpi4_emergency_uart_puts("\n");
+ 	if (unlikely(!bi))
+ 		rpi4_emergency_uart_puts(RPI4_P2_FAIL_BOOTINFO_NULL);
+ #endif
+ 	if (unlikely(!bi))
+ 		UK_CRASH("Could not retrieve bootinfo\n");
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_emergency_uart_puts(RPI4_P2_S0_BEFORE_EARLY_INIT);
++#endif
+ 	uk_boot_early_init(bi);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_emergency_uart_puts(RPI4_P2_S1_AFTER_EARLY_INIT);
+ 	rpi4_emergency_uart_puts(RPI4_P2_BS1_BEFORE_BOOTSTACK_ALLOC);
+ 	rpi4_emergency_uart_puts(RPI4_P2_BS1_STACK_SIZE_PREFIX);
+@@ -362,34 +382,35 @@
+ 	bstack = ukplat_memregion_alloc(__STACK_SIZE, UKPLAT_MEMRT_STACK,
+ 					UKPLAT_MEMRF_READ |
+ 					UKPLAT_MEMRF_WRITE);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_emergency_uart_puts(RPI4_P2_BS3_ALLOC_RET_PREFIX);
+ 	rpi4_emergency_uart_put_hex64((__u64)(__uptr)bstack);
+ 	rpi4_emergency_uart_puts("\n");
+ 	if (unlikely(!bstack))
+ 		rpi4_emergency_uart_puts(RPI4_P2_BS4_BEFORE_FAIL_BOOTSTACK_ALLOC);
+ #endif
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	if (unlikely(!bstack))
+ 		rpi4_emergency_uart_puts(RPI4_P2_FAIL_BOOTSTACK_ALLOC);
+ #endif
+ 	if (unlikely(!bstack))
+ 		UK_CRASH("Boot stack alloc failed\n");
+ 	bstack = (void *)((__uptr)bstack + __STACK_SIZE);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_emergency_uart_puts(RPI4_P2_S2_AFTER_BOOTSTACK_SETUP);
+ #endif
+ 
+ 	/* Initialize paging */
+ 	rc = ukplat_mem_init();
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	if (unlikely(rc))
+ 		rpi4_emergency_uart_puts(RPI4_P2_FAIL_PAGING_INIT);
+ #endif
+ 	if (unlikely(rc))
+ 		UK_CRASH("Could not initialize paging (%d)\n", rc);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_emergency_uart_puts(RPI4_P2_S3_AFTER_PAGING_INIT);
++	rpi4_emergency_uart_puts(RPI4_P2_IQ1_BEFORE_POST_PAGING_STEP);
+ #endif
+ 
+ #if CONFIG_ENFORCE_W_XOR_X && CONFIG_PAGING
+@@ -398,7 +419,7 @@
+ 
+ #ifdef CONFIG_ARM64_FEAT_PAUTH
+ 	rc = ukplat_pauth_init();
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	if (unlikely(rc))
+ 		rpi4_emergency_uart_puts(RPI4_P2_FAIL_PAUTH_INIT);
+ #endif
+@@ -408,7 +429,7 @@
+ 
+ #ifdef CONFIG_HAVE_MEMTAG
+ 	rc = ukarch_memtag_init();
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	if (unlikely(rc))
+ 		rpi4_emergency_uart_puts(RPI4_P2_FAIL_MEMTAG_INIT);
+ #endif
+@@ -423,26 +444,36 @@
+ #endif /* CONFIG_UKPLAT_ACPI */
+ 
+ 	/* Initialize interrupt controller */
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_emergency_uart_puts(RPI4_P2_IQ1_AFTER_POST_PAGING_STEP);
++	rpi4_emergency_uart_puts(RPI4_P2_IQ2_BEFORE_IRQ_PROBE);
++#endif
+ 	rc = uk_intctlr_probe();
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_emergency_uart_puts(RPI4_P2_IQ2_AFTER_IRQ_PROBE);
++	rpi4_emergency_uart_puts(RPI4_P2_IQ2_IRQ_RC_PREFIX);
++	rpi4_emergency_uart_put_hex32((__u32)rc);
++	rpi4_emergency_uart_puts("\n");
++	if (unlikely(rc))
++		rpi4_emergency_uart_puts(RPI4_P2_IQ_FAIL_IRQ_PROBE);
+ 	if (unlikely(rc))
+ 		rpi4_emergency_uart_puts(RPI4_P2_FAIL_IRQ_INIT);
+ #endif
+ 	if (unlikely(rc))
+ 		UK_CRASH("Could not initialize the IRQ controller: %d\n", rc);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_emergency_uart_puts(RPI4_P2_S4_AFTER_IRQ_INIT);
+ #endif
+ 
+ 	/* Initialize logical boot CPU */
+ 	rc = lcpu_init(lcpu_get_bsp());
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	if (unlikely(rc))
+ 		rpi4_emergency_uart_puts(RPI4_P2_FAIL_LCPU_INIT);
+ #endif
+ 	if (unlikely(rc))
+ 		UK_CRASH("Failed to initialize bootstrapping CPU: %d\n", rc);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_emergency_uart_puts(RPI4_P2_S5_AFTER_LCPU_INIT);
+ #endif
+ 
+@@ -459,14 +490,14 @@
+ 	if (unlikely(rc < 0))
+ 		smccc_psci_call = NULL;
+ #else
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	if (unlikely(rc < 0))
+ 		rpi4_emergency_uart_puts(RPI4_P2_FAIL_PSCI_METHOD);
+ #endif
+ 	if (unlikely(rc < 0))
+ 		UK_CRASH("Failed to get PSCI method: %d.\n", rc);
+ #endif /* CONFIG_KVM_VMM_RPI4 && CONFIG_UKPLAT_LCPU_MAXCOUNT == 1 */
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_emergency_uart_puts(RPI4_P2_S6_AFTER_PLATFORM_SETUP);
+ #endif
+ 
+@@ -475,7 +506,7 @@
+ 	 */
+ 	uk_pr_info("Switch from bootstrap stack to stack @%p\n", bstack);
+ 
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_emergency_uart_puts(RPI4_P2_S7_BEFORE_APP_ENTRY);
+ 	rpi4_emergency_uart_puts(RPI4_P2_AE1_AFTER_S7);
+ 	rpi4_emergency_uart_puts(RPI4_P2_AE2_BEFORE_BOOTSTRAP_CALL);
+--- a/plat/common/memory.c
++++ b/plat/common/memory.c
+@@ -266,9 +266,11 @@
+ 		pstart = ALIGN_UP(mrd->pbase, __PAGE_SIZE);
+ 		pend = pstart + size;
+ 
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 		if (type == UKPLAT_MEMRT_STACK && pstart == 0) {
++#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
+ 			rpi4_memalloc_uart_puts(RPI4_P2_BS5_MRDI_REJECT_REASON_ZERO_RET);
++#endif
+ 			continue;
+ 		}
+ #endif
+--- a/plat/common/bootinfo_fdt.c
++++ b/plat/common/bootinfo_fdt.c
+@@ -219,12 +219,14 @@
+ 	struct ukplat_memregion_desc mrd = {0};
+ 	__u64 raw_reg0 = 0;
+ 	__u64 raw_reg1 = 0;
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
+-	volatile __u8 *bi_bytes = (volatile __u8 *)bi;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	const volatile __u8 *reg_bytes = NULL;
+ 	__u32 dbg_cell0 = 0;
+ 	__u32 dbg_cell1 = 0;
+ 	__u32 dbg_cell2 = 0;
++#endif
++#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++	volatile __u8 *bi_bytes = (volatile __u8 *)bi;
+ 	int tuple_stride = 0;
+ 	int tuple_count = 0;
+ 	int p2_image_in_range = 0;
+@@ -353,9 +355,16 @@
+ 	rpi4_bootinfo_uart_put_hex64(raw_reg1);
+ 	rpi4_bootinfo_uart_puts("\n");
+ 	rpi4_bootinfo_uart_puts(RPI4_P2_A7_AFTER_FIRST_TUPLE_READ);
++#elif CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE3_SELFTEST
++	reg_bytes = (const volatile __u8 *)regs;
++	dbg_cell0 = rpi4_bootinfo_read_be32(reg_bytes + 0);
++	dbg_cell1 = rpi4_bootinfo_read_be32(reg_bytes + 4);
++	dbg_cell2 = rpi4_bootinfo_read_be32(reg_bytes + 8);
++	raw_reg0 = ((__u64)dbg_cell0 << 32) | (__u64)dbg_cell1;
++	raw_reg1 = (__u64)dbg_cell2;
+ #endif
+ 
+-#if !CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if !CONFIG_APPPI4PHASE2_BOOTRESTORE && !CONFIG_APPPI4PHASE3_SELFTEST
+ 	raw_reg1 = regs[1];
+ 	raw_reg0 = regs[0];
+ #endif
+@@ -400,8 +409,8 @@
+ 		rpi4_bootinfo_uart_puts(RPI4_P2_AFTER_MEM_REG_PATH_B_SKIP_LOW);
+ #endif
+ 		goto end_mrd;
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
+ 	}
++#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
+ 	rpi4_p2_set_fail_stage("AFTER_MEM_REG_PATH_C_LOW_REGION");
+ 	rpi4_bootinfo_uart_puts(RPI4_P2_AFTER_MEM_REG_PATH_C_LOW_REGION);
+ #endif
+@@ -458,8 +467,8 @@
+ 		rpi4_bootinfo_uart_puts(RPI4_P2_AFTER_MEM_REG_PATH_E_EARLY_RETURN);
+ #endif
+ 		return;
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
+ 	}
++#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
+ 	rpi4_p2_set_fail_stage("AFTER_MEM_REG_PATH_F_HIGH_REGION");
+ 	rpi4_bootinfo_uart_puts(RPI4_P2_AFTER_MEM_REG_PATH_F_HIGH_REGION);
+ #endif
+--- a/lib/ukboot/boot.c
++++ b/lib/ukboot/boot.c
+@@ -124,7 +124,7 @@
+ static struct uk_vas kernel_vas;
+ #endif /* CONFIG_LIBUKBOOT_HEAP_BASE && CONFIG_LIBUKVMEM */
+ 
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ #define RPI4_BOOT_UART_BASE 0xFE201000UL
+ #define RPI4_BOOT_UARTDR_OFFSET 0x00UL
+ #define RPI4_BOOT_UARTFR_OFFSET 0x18UL
+@@ -239,7 +239,7 @@
+ 	int rc;
+ #else /* CONFIG_LIBUKBOOT_HEAP_BASE */
+ 	struct ukplat_memregion_desc *md;
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	unsigned long md_idx = 0;
+ 	int addmem_rc;
+ #endif
+@@ -319,12 +319,12 @@
+ 	 * again with the next region. As soon we have an allocator, we simply
+ 	 * add every subsequent region to it.
+ 	 */
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_H1_BACKEND_BBUDDY);
+ #endif
+ 	ukplat_memregion_foreach(&md, UKPLAT_MEMRT_FREE, 0, 0) {
+ 		UK_ASSERT_VALID_FREE_MRD(md);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 		rpi4_boot_uart_puts(RPI4_P2_H1_MRDI_INDEX_PREFIX);
+ 		rpi4_boot_uart_put_hex32((__u32)md_idx);
+ 		rpi4_boot_uart_puts("\n");
+@@ -337,7 +337,7 @@
+ #endif
+ 
+ 		if (!a && md->vbase == 0) {
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 			rpi4_boot_uart_puts(RPI4_P2_H_REJECT_REASON_ZERO_BASE);
+ 			md_idx++;
+ #endif
+@@ -355,18 +355,18 @@
+ 			    );
+ 
+ 		if (!a) {
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 			rpi4_boot_uart_puts(RPI4_P2_H1_BEFORE_UK_ALLOC_INIT);
+ #endif
+ 			a = uk_alloc_init((void *)md->vbase, md->len);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 			rpi4_boot_uart_puts(RPI4_P2_H1_AFTER_UK_ALLOC_INIT);
+ 			rpi4_boot_uart_puts(RPI4_P2_H1_HEAP_RET_PREFIX);
+ 			rpi4_boot_uart_put_hex64((__u64)(__uptr)a);
+ 			rpi4_boot_uart_puts("\n");
+ #endif
+ 		} else {
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 			rpi4_boot_uart_puts(RPI4_P2_H1_BEFORE_ADDMEM);
+ 			addmem_rc = uk_alloc_addmem(a, (void *)md->vbase, md->len);
+ 			rpi4_boot_uart_puts(RPI4_P2_H1_AFTER_ADDMEM);
+@@ -377,7 +377,7 @@
+ 			uk_alloc_addmem(a, (void *)md->vbase, md->len);
+ #endif
+ 		}
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 		md_idx++;
+ #endif
+ 	}
+@@ -418,7 +418,7 @@
+ 	 * the cmdline. We should expect at minimum one arg,
+ 	 * CONFIG_UK_NAME.
+ 	 */
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_AE3_BOOTSTRAP_ENTRY);
+ 	if (unlikely(!boot_argc))
+ 		rpi4_boot_uart_puts(RPI4_P2_AE_FAIL_BOOT_ARGC_ZERO);
+@@ -434,11 +434,11 @@
+ 
+ 	uk_pr_info("Unikraft constructor table at %p - %p\n",
+ 		   &uk_ctortab_start[0], &uk_ctortab_end);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_AE3A_BEFORE_BOOT_CTORS);
+ #endif
+ 	uk_ctortab_foreach(ctorfn, uk_ctortab_start, uk_ctortab_end) {
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 		if (unlikely(!*ctorfn))
+ 			rpi4_boot_uart_puts(RPI4_P2_AE_FAIL_BOOT_CTOR_NULL);
+ #endif
+@@ -446,19 +446,19 @@
+ 		uk_pr_debug("Call constructor: %p())...\n", *ctorfn);
+ 		(*ctorfn)();
+ 	}
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_AE3B_AFTER_BOOT_CTORS);
+ #endif
+ 
+ #if CONFIG_LIBUKBOOT_INITALLOC
+ 	uk_pr_info("Initialize memory allocator...\n");
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_AE3C_BEFORE_HEAP_INIT);
+ 	rpi4_boot_uart_puts(RPI4_P2_H1_BEFORE_HEAP_CALL);
+ #endif
+ 
+ 	a = heap_init();
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_H2_AFTER_HEAP_CALL);
+ 	rpi4_boot_uart_puts(RPI4_P2_H2_HEAP_RET_PREFIX);
+ 	rpi4_boot_uart_put_hex64((__u64)(__uptr)a);
+@@ -466,7 +466,7 @@
+ 	if (unlikely(!a))
+ 		rpi4_boot_uart_puts(RPI4_P2_H_FAIL_HEAP_INIT_NULL);
+ #endif
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	if (unlikely(!a))
+ 		rpi4_boot_uart_puts(RPI4_P2_AE_FAIL_HEAP_INIT);
+ #endif
+@@ -474,7 +474,7 @@
+ 		UK_CRASH("Failed to initialize memory allocator\n");
+ 	else {
+ 		rc = ukplat_memallocator_set(a);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 		if (unlikely(rc != 0))
+ 			rpi4_boot_uart_puts(RPI4_P2_AE_FAIL_SET_ALLOC);
+ #endif
+@@ -487,7 +487,7 @@
+ 				, &kernel_vas, ALLOCSTACK_INITIAL_SIZE
+ 	#endif /* CONFIG_LIBUKVMEM */
+ 			       );
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	if (unlikely(!sa))
+ 		rpi4_boot_uart_puts(RPI4_P2_AE_FAIL_STACK_ALLOCATOR);
+ #endif
+@@ -502,7 +502,7 @@
+ 				    , &kernel_vas, AUXSTACK_SIZE
+ 	#endif /* CONFIG_LIBUKVMEM */
+ 				   );
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	if (unlikely(!auxsa))
+ 		rpi4_boot_uart_puts(RPI4_P2_AE_FAIL_AUXSTACK_ALLOCATOR);
+ #endif
+@@ -513,7 +513,7 @@
+ 	tls = uk_memalign(a,
+ 			  ukarch_tls_area_align(),
+ 			  ukarch_tls_area_size());
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	if (unlikely(!tls))
+ 		rpi4_boot_uart_puts(RPI4_P2_AE_FAIL_TLS_ALLOC);
+ #endif
+@@ -529,7 +529,7 @@
+ 	/* Allocate auxiliary stack for this execution context */
+ 	auxstack = uk_memalign(auxsa,
+ 			       UKARCH_AUXSP_ALIGN, AUXSTACK_SIZE);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	if (unlikely(!auxstack))
+ 		rpi4_boot_uart_puts(RPI4_P2_AE_FAIL_AUXSTACK);
+ #endif
+@@ -540,31 +540,31 @@
+ 	auxsp = ukarch_gen_sp(auxstack, AUXSTACK_SIZE);
+ 	ukarch_auxsp_init(auxsp);
+ 	auxspcb = ukarch_auxsp_get_cb(auxsp);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	if (unlikely(!auxspcb))
+ 		rpi4_boot_uart_puts(RPI4_P2_AE_FAIL_AUXSPCB_NULL);
+ #endif
+ 	UK_ASSERT(auxspcb);
+ 	ukarch_auxspcb_set_uktlsp(auxspcb, uktlsp);
+ 	ukplat_lcpu_set_auxsp(auxsp);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_AE3D_AFTER_HEAP_INIT);
+ #endif
+ #endif /* CONFIG_LIBUKBOOT_INITALLOC */
+ 
+ #if CONFIG_LIBUKINTCTLR
+ 	uk_pr_info("Initialize the IRQ subsystem...\n");
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_AE3E_BEFORE_IRQ_SUBSYS);
+ #endif
+ 	rc = uk_intctlr_init(a);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	if (unlikely(rc))
+ 		rpi4_boot_uart_puts(RPI4_P2_AE_FAIL_IRQ_SUBSYS);
+ #endif
+ 	if (unlikely(rc))
+ 		UK_CRASH("Could not initialize the IRQ subsystem\n");
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_AE3F_AFTER_IRQ_SUBSYS);
+ #endif
+ #endif /* CONFIG_LIBUKINTCTLR */
+@@ -578,7 +578,7 @@
+ #if CONFIG_LIBUKBOOT_INITSCHEDCOOP
+ 	s = uk_schedcoop_create(a, sa, auxsa, a);
+ #endif
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	if (unlikely(!s))
+ 		rpi4_boot_uart_puts(RPI4_P2_AE_FAIL_SCHED);
+ #endif
+@@ -599,7 +599,7 @@
+ 				       false, false,
+ 					       "main", NULL,
+ 					       main_thread_dtor);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	if (unlikely(!m || PTRISERR(m)))
+ 		rpi4_boot_uart_puts(RPI4_P2_AE_FAIL_MAINTHREAD_LAUNCH);
+ #endif
+@@ -615,13 +615,13 @@
+ 	/**
+ 	 * Run init table
+ 	 */
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_AE4_BEFORE_INITCALLS);
+ #endif
+ 	uk_pr_info("Init Table @ %p - %p\n",
+ 		   &uk_inittab_start[0], &uk_inittab_end);
+ 	uk_inittab_foreach(init_entry, uk_inittab_start, uk_inittab_end) {
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 		if (unlikely(!init_entry))
+ 			rpi4_boot_uart_puts(RPI4_P2_AE_FAIL_INIT_ENTRY_NULL);
+ #endif
+@@ -634,7 +634,7 @@
+ 			    init_entry->init, &ictx);
+ 		rc = (*init_entry->init)(&ictx);
+ 		if (rc < 0) {
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 			rpi4_boot_uart_puts(RPI4_P2_AE_FAIL_INITCALL_NEG);
+ #endif
+ 			uk_pr_err("Init function at %p returned error %d\n",
+@@ -642,7 +642,7 @@
+ 			goto exit;
+ 		}
+ 	}
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_AE5_AFTER_INITCALLS);
+ #endif
+ 
+@@ -654,7 +654,7 @@
+ 	fflush(stdout);
+ 
+ #if !CONFIG_LIBUKBOOT_MAINTHREAD
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_AE5A_BEFORE_DO_MAIN_CALL);
+ #endif
+ 	tctx.exit_code = do_main(ictx.cmdline.argc, ictx.cmdline.argv);
+@@ -702,7 +702,7 @@
+ 	uk_ctor_func_t *ctorfn;
+ 	int ret;
+ 
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_AE5B_DO_MAIN_ENTRY);
+ 	rpi4_boot_uart_puts(RPI4_P2_AE5C_BEFORE_PREINIT_CTORS);
+ #endif
+@@ -725,7 +725,7 @@
+ 		uk_pr_debug("Call pre-init constructor: %p()...\n", *ctorfn);
+ 		(*ctorfn)();
+ 	}
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_AE5D_AFTER_PREINIT_CTORS);
+ 	rpi4_boot_uart_puts(RPI4_P2_AE5E_BEFORE_INIT_CTORS);
+ #endif
+@@ -740,7 +740,7 @@
+ 			    argc, argv);
+ 		(*ctorfn)(argc, argv);
+ 	}
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_AE5F_AFTER_INIT_CTORS);
+ #endif
+ 
+@@ -765,7 +765,7 @@
+ 	uk_pr_info("])\n");
+ #endif /* CONFIG_LIBUKDEBUG_PRINTK_INFO */
+ 
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_boot_uart_puts(RPI4_P2_AE6_BEFORE_MAIN_CALL);
+ #endif
+ 	ret = main(argc, argv);
+--- a/lib/ukboot/early_init.c
++++ b/lib/ukboot/early_init.c
+@@ -6,6 +6,7 @@
+ 
+ #include <uk/argparse.h>
+ #include <uk/assert.h>
++#include <uk/config.h>
+ #include <uk/boot/earlytab.h>
+ #include <uk/essentials.h>
+ #include <uk/plat/common/bootinfo.h>
+@@ -25,6 +26,96 @@
+ char **boot_argv = arg_vect; /* updated if CONFIG_LIBUKPARAM */
+ int boot_argc;
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++#define RPI4_EI_UART_BASE 0xFE201000UL
++#define RPI4_EI_UARTDR_OFFSET 0x00UL
++#define RPI4_EI_UARTFR_OFFSET 0x18UL
++#define RPI4_EI_FR_TXFF (1U << 5)
++#define RPI4_P2_EI0_BI_PTR_PREFIX "UNISPLIT_RPI4_P2_EI0_BI_PTR=0x"
++#define RPI4_P2_EI1_BEFORE_BOOTINFO_PRINT "UNISPLIT_RPI4_P2_EI1_BEFORE_BOOTINFO_PRINT\n"
++#define RPI4_P2_EI1_AFTER_BOOTINFO_PRINT "UNISPLIT_RPI4_P2_EI1_AFTER_BOOTINFO_PRINT\n"
++#define RPI4_P2_EI2_BEFORE_EARLYTAB_CALL "UNISPLIT_RPI4_P2_EI2_BEFORE_EARLYTAB_CALL\n"
++#define RPI4_P2_EI2_ENTRY_PTR_PREFIX "UNISPLIT_RPI4_P2_EI2_ENTRY_PTR=0x"
++#define RPI4_P2_EI2_AFTER_EARLYTAB_CALL "UNISPLIT_RPI4_P2_EI2_AFTER_EARLYTAB_CALL\n"
++#define RPI4_P2_EI2_ENTRY_RC_PREFIX "UNISPLIT_RPI4_P2_EI2_ENTRY_RC=0x"
++#define RPI4_P2_EI3_BEFORE_PARSE_SELECT "UNISPLIT_RPI4_P2_EI3_BEFORE_PARSE_SELECT\n"
++#define RPI4_P2_EI3_CMDLINE_PTR_PREFIX "UNISPLIT_RPI4_P2_EI3_CMDLINE_PTR=0x"
++#define RPI4_P2_EI3_CMDLINE_LEN_PREFIX "UNISPLIT_RPI4_P2_EI3_CMDLINE_LEN=0x"
++#define RPI4_P2_PC1_BEFORE_LENGTH_CHECK "UNISPLIT_RPI4_P2_PC1_BEFORE_LENGTH_CHECK\n"
++#define RPI4_P2_PC1_LIMIT_PREFIX "UNISPLIT_RPI4_P2_PC1_LIMIT=0x"
++#define RPI4_P2_PC1_AFTER_LENGTH_CHECK "UNISPLIT_RPI4_P2_PC1_AFTER_LENGTH_CHECK\n"
++#define RPI4_P2_PC2_BEFORE_COPY "UNISPLIT_RPI4_P2_PC2_BEFORE_COPY\n"
++#define RPI4_P2_PC2_SRC_PTR_PREFIX "UNISPLIT_RPI4_P2_PC2_SRC_PTR=0x"
++#define RPI4_P2_PC2_DST_PTR_PREFIX "UNISPLIT_RPI4_P2_PC2_DST_PTR=0x"
++#define RPI4_P2_PC2_COPY_LEN_PREFIX "UNISPLIT_RPI4_P2_PC2_COPY_LEN=0x"
++#define RPI4_P2_PC2_AFTER_COPY "UNISPLIT_RPI4_P2_PC2_AFTER_COPY\n"
++#define RPI4_P2_PC3_BEFORE_NUL_TERM "UNISPLIT_RPI4_P2_PC3_BEFORE_NUL_TERM\n"
++#define RPI4_P2_PC3_NUL_INDEX_PREFIX "UNISPLIT_RPI4_P2_PC3_NUL_INDEX=0x"
++#define RPI4_P2_PC3_AFTER_NUL_TERM "UNISPLIT_RPI4_P2_PC3_AFTER_NUL_TERM\n"
++#define RPI4_P2_EI3_BEFORE_ARGNPARSE "UNISPLIT_RPI4_P2_EI3_BEFORE_ARGNPARSE\n"
++#define RPI4_P2_EI3_AFTER_ARGNPARSE "UNISPLIT_RPI4_P2_EI3_AFTER_ARGNPARSE\n"
++#define RPI4_P2_EI3_ARGC_PREFIX "UNISPLIT_RPI4_P2_EI3_ARGC=0x"
++#define RPI4_P2_EI3_BEFORE_CLEAR_CMDLINE "UNISPLIT_RPI4_P2_EI3_BEFORE_CLEAR_CMDLINE\n"
++#define RPI4_P2_EI3_AFTER_CLEAR_CMDLINE "UNISPLIT_RPI4_P2_EI3_AFTER_CLEAR_CMDLINE\n"
++#define RPI4_P2_EI4_BEFORE_MRD_COALESCE "UNISPLIT_RPI4_P2_EI4_BEFORE_MRD_COALESCE\n"
++#define RPI4_P2_EI4_MRD_COUNT_BEFORE_PREFIX "UNISPLIT_RPI4_P2_EI4_MRD_COUNT_BEFORE=0x"
++#define RPI4_P2_EI4_AFTER_MRD_COALESCE "UNISPLIT_RPI4_P2_EI4_AFTER_MRD_COALESCE\n"
++#define RPI4_P2_EI4_MRD_COUNT_AFTER_PREFIX "UNISPLIT_RPI4_P2_EI4_MRD_COUNT_AFTER=0x"
++#define RPI4_P2_EI_FAIL_CMDLINE_TOO_BIG "UNISPLIT_RPI4_P2_EI_FAIL_CMDLINE_TOO_BIG\n"
++#define RPI4_P2_EI_FAIL_EARLYTAB_RC "UNISPLIT_RPI4_P2_EI_FAIL_EARLYTAB_RC\n"
++#define RPI4_P2_PC_FAIL_CMDLINE_TOO_BIG "UNISPLIT_RPI4_P2_PC_FAIL_CMDLINE_TOO_BIG\n"
++
++static inline __u16 rpi4_ei_uart_read(__u64 offset)
++{
++	return *((volatile __u16 *)(RPI4_EI_UART_BASE + offset));
++}
++
++static inline void rpi4_ei_uart_write(__u64 offset, __u16 value)
++{
++	*((volatile __u16 *)(RPI4_EI_UART_BASE + offset)) = value;
++}
++
++static void rpi4_ei_uart_putc(char ch)
++{
++	while (rpi4_ei_uart_read(RPI4_EI_UARTFR_OFFSET) & RPI4_EI_FR_TXFF)
++		;
++
++	rpi4_ei_uart_write(RPI4_EI_UARTDR_OFFSET, (__u16)(ch & 0xff));
++}
++
++static void rpi4_ei_uart_puts(const char *s)
++{
++	while (*s) {
++		if (*s == '\n')
++			rpi4_ei_uart_putc('\r');
++		rpi4_ei_uart_putc(*s++);
++	}
++}
++
++static void rpi4_ei_uart_put_hex_nibble(__u8 nibble)
++{
++	static const char hex[] = "0123456789abcdef";
++
++	rpi4_ei_uart_putc(hex[nibble & 0xf]);
++}
++
++static void rpi4_ei_uart_put_hex32(__u32 value)
++{
++	int shift;
++
++	for (shift = 28; shift >= 0; shift -= 4)
++		rpi4_ei_uart_put_hex_nibble((__u8)(value >> shift));
++}
++
++static void rpi4_ei_uart_put_hex64(__u64 value)
++{
++	int shift;
++
++	for (shift = 60; shift >= 0; shift -= 4)
++		rpi4_ei_uart_put_hex_nibble((__u8)(value >> shift));
++}
++#endif
++
+ #define uk_boot_earlytab_foreach(itr)			\
+ 	for ((itr) = (struct uk_boot_earlytab_entry *)	\
+ 			uk_boot_earlytab_start;		\
+@@ -38,6 +129,9 @@
+ 
+ 	UK_ASSERT(bi);
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_ei_uart_puts(RPI4_P2_EI3_BEFORE_PARSE_SELECT);
++#endif
+ 	if (!bi->cmdline_len) {
+ 		cmdl = CONFIG_UK_NAME;
+ 		cmdline_len = sizeof(CONFIG_UK_NAME);
+@@ -45,19 +139,69 @@
+ 		cmdl = (const char *)bi->cmdline;
+ 		cmdline_len = bi->cmdline_len;
+ 	}
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_ei_uart_puts(RPI4_P2_EI3_CMDLINE_PTR_PREFIX);
++	rpi4_ei_uart_put_hex64((__u64)(__uptr)cmdl);
++	rpi4_ei_uart_puts("\n");
++	rpi4_ei_uart_puts(RPI4_P2_EI3_CMDLINE_LEN_PREFIX);
++	rpi4_ei_uart_put_hex32((__u32)cmdline_len);
++	rpi4_ei_uart_puts("\n");
++	rpi4_ei_uart_puts(RPI4_P2_PC1_BEFORE_LENGTH_CHECK);
++	rpi4_ei_uart_puts(RPI4_P2_PC1_LIMIT_PREFIX);
++	rpi4_ei_uart_put_hex32((__u32)ARRAY_SIZE(cmdline));
++	rpi4_ei_uart_puts("\n");
++#endif
+ 
+ 	if (unlikely(cmdline_len > ARRAY_SIZE(cmdline))) {
+ 		rc = -E2BIG;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_ei_uart_puts(RPI4_P2_PC_FAIL_CMDLINE_TOO_BIG);
++		rpi4_ei_uart_puts(RPI4_P2_EI_FAIL_CMDLINE_TOO_BIG);
++#endif
+ 		uk_pr_err("Could not parse cmdline (%d)\n", rc);
+ 		return rc;
+ 	}
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_ei_uart_puts(RPI4_P2_PC1_AFTER_LENGTH_CHECK);
++#endif
+ 
+ 	/* Break down cmdline to argv */
+-	strncpy(cmdline, cmdl, ARRAY_SIZE(cmdline));
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_ei_uart_puts(RPI4_P2_PC2_BEFORE_COPY);
++	rpi4_ei_uart_puts(RPI4_P2_PC2_SRC_PTR_PREFIX);
++	rpi4_ei_uart_put_hex64((__u64)(__uptr)cmdl);
++	rpi4_ei_uart_puts("\n");
++	rpi4_ei_uart_puts(RPI4_P2_PC2_DST_PTR_PREFIX);
++	rpi4_ei_uart_put_hex64((__u64)(__uptr)cmdline);
++	rpi4_ei_uart_puts("\n");
++	rpi4_ei_uart_puts(RPI4_P2_PC2_COPY_LEN_PREFIX);
++	rpi4_ei_uart_put_hex32((__u32)cmdline_len);
++	rpi4_ei_uart_puts("\n");
++#endif
++	strncpy(cmdline, cmdl, cmdline_len);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_ei_uart_puts(RPI4_P2_PC2_AFTER_COPY);
++	rpi4_ei_uart_puts(RPI4_P2_PC3_BEFORE_NUL_TERM);
++	rpi4_ei_uart_puts(RPI4_P2_PC3_NUL_INDEX_PREFIX);
++	rpi4_ei_uart_put_hex32((__u32)cmdline_len);
++	rpi4_ei_uart_puts("\n");
++#endif
+ 	cmdline[cmdline_len] = '\0';
+-
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_ei_uart_puts(RPI4_P2_PC3_AFTER_NUL_TERM);
++#endif
++
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_ei_uart_puts(RPI4_P2_EI3_BEFORE_ARGNPARSE);
++#endif
+ 	boot_argc = uk_argnparse(cmdline, cmdline_len, boot_argv,
+ 				 CONFIG_LIBUKBOOT_MAXNBARGS);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_ei_uart_puts(RPI4_P2_EI3_AFTER_ARGNPARSE);
++	rpi4_ei_uart_puts(RPI4_P2_EI3_ARGC_PREFIX);
++	rpi4_ei_uart_put_hex32((__u32)boot_argc);
++	rpi4_ei_uart_puts("\n");
++#endif
+ 
+ #if CONFIG_LIBUKLIBPARAM
+ 	/*
+@@ -93,7 +237,13 @@
+ 	 * as, depending on the boot protocol, it may be
+ 	 * in memory that is unmapped at memory_init().
+ 	 */
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_ei_uart_puts(RPI4_P2_EI3_BEFORE_CLEAR_CMDLINE);
++#endif
+ 	bi->cmdline = (__u64)NULL;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_ei_uart_puts(RPI4_P2_EI3_AFTER_CLEAR_CMDLINE);
++#endif
+ 
+ 	return 0;
+ }
+@@ -101,7 +251,19 @@
+ static int uk_boot_early_init_mrd_coalesce(struct ukplat_bootinfo *bi)
+ {
+ 	UK_ASSERT(bi);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_ei_uart_puts(RPI4_P2_EI4_BEFORE_MRD_COALESCE);
++	rpi4_ei_uart_puts(RPI4_P2_EI4_MRD_COUNT_BEFORE_PREFIX);
++	rpi4_ei_uart_put_hex32((__u32)bi->mrds.count);
++	rpi4_ei_uart_puts("\n");
++#endif
+ 	ukplat_memregion_list_coalesce(&bi->mrds);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_ei_uart_puts(RPI4_P2_EI4_AFTER_MRD_COALESCE);
++	rpi4_ei_uart_puts(RPI4_P2_EI4_MRD_COUNT_AFTER_PREFIX);
++	rpi4_ei_uart_put_hex32((__u32)bi->mrds.count);
++	rpi4_ei_uart_puts("\n");
++#endif
+ 	return 0;
+ }
+ 
+@@ -112,11 +274,36 @@
+ 
+ 	UK_ASSERT(bi);
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_ei_uart_puts(RPI4_P2_EI0_BI_PTR_PREFIX);
++	rpi4_ei_uart_put_hex64((__u64)(__uptr)bi);
++	rpi4_ei_uart_puts("\n");
++	rpi4_ei_uart_puts(RPI4_P2_EI1_BEFORE_BOOTINFO_PRINT);
++#endif
+ 	ukplat_bootinfo_print();
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_ei_uart_puts(RPI4_P2_EI1_AFTER_BOOTINFO_PRINT);
++#endif
+ 
+ 	uk_boot_earlytab_foreach(entry) {
+ 		UK_ASSERT(entry);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_ei_uart_puts(RPI4_P2_EI2_BEFORE_EARLYTAB_CALL);
++		rpi4_ei_uart_puts(RPI4_P2_EI2_ENTRY_PTR_PREFIX);
++		rpi4_ei_uart_put_hex64((__u64)(__uptr)entry->init);
++		rpi4_ei_uart_puts("\n");
++#endif
+ 		rc = (*entry->init)(bi);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_ei_uart_puts(RPI4_P2_EI2_AFTER_EARLYTAB_CALL);
++		rpi4_ei_uart_puts(RPI4_P2_EI2_ENTRY_RC_PREFIX);
++		rpi4_ei_uart_put_hex32((__u32)rc);
++		rpi4_ei_uart_puts("\n");
++#endif
++		if (unlikely(rc))
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++			rpi4_ei_uart_puts(RPI4_P2_EI_FAIL_EARLYTAB_RC);
++#endif
+ 		if (unlikely(rc))
+ 			UK_CRASH("Early init call @ %p failed with %d",
+ 				 entry->init, rc);
+--- a/lib/ukofw/fdt.c
++++ b/lib/ukofw/fdt.c
+@@ -35,6 +35,8 @@
+ #include <libfdt.h>
+ #include <string.h>
+ 
++#include <uk/config.h>
++#include <uk/essentials.h>
+ #include <uk/ofw/fdt.h>
+ #include <uk/print.h>
+ #include <uk/assert.h>
+@@ -43,6 +45,171 @@
+ #define FDT_CHECK_COUNTS(na, ns)  ((na) > 0 && (na) <= FDT_MAX_ADDR_CELLS && \
+ 					(ns) > 0)
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++#define RPI4_DA_UART_BASE 0xFE201000UL
++#define RPI4_DA_UARTDR_OFFSET 0x00UL
++#define RPI4_DA_UARTFR_OFFSET 0x18UL
++#define RPI4_DA_FR_TXFF (1U << 5)
++#define RPI4_P2_DA1_ENTRY "UNISPLIT_RPI4_P2_DA1_ENTRY\n"
++#define RPI4_P2_DA1_NODE_PREFIX "UNISPLIT_RPI4_P2_DA1_NODE=0x"
++#define RPI4_P2_DA1_INDEX_PREFIX "UNISPLIT_RPI4_P2_DA1_INDEX=0x"
++#define RPI4_P2_DA1_BEFORE_PARENT "UNISPLIT_RPI4_P2_DA1_BEFORE_PARENT\n"
++#define RPI4_P2_DA1_AFTER_PARENT "UNISPLIT_RPI4_P2_DA1_AFTER_PARENT\n"
++#define RPI4_P2_DA1_PARENT_PREFIX "UNISPLIT_RPI4_P2_DA1_PARENT=0x"
++#define RPI4_P2_DA1_ADDR_CELLS_PREFIX "UNISPLIT_RPI4_P2_DA1_ADDR_CELLS=0x"
++#define RPI4_P2_DA1_SIZE_CELLS_PREFIX "UNISPLIT_RPI4_P2_DA1_SIZE_CELLS=0x"
++#define RPI4_P2_DA1_BEFORE_PROP "UNISPLIT_RPI4_P2_DA1_BEFORE_PROP\n"
++#define RPI4_P2_DA1_AFTER_PROP "UNISPLIT_RPI4_P2_DA1_AFTER_PROP\n"
++#define RPI4_P2_DA1_PROP_PTR_PREFIX "UNISPLIT_RPI4_P2_DA1_PROP_PTR=0x"
++#define RPI4_P2_DA1_PROP_LEN_PREFIX "UNISPLIT_RPI4_P2_DA1_PROP_LEN=0x"
++#define RPI4_P2_DA2_BEFORE_TERM_CHECK "UNISPLIT_RPI4_P2_DA2_BEFORE_TERM_CHECK\n"
++#define RPI4_P2_DA2_TERM_SIZE_PREFIX "UNISPLIT_RPI4_P2_DA2_TERM_SIZE=0x"
++#define RPI4_P2_DA2_PROP_ADDR_PREFIX "UNISPLIT_RPI4_P2_DA2_PROP_ADDR=0x"
++#define RPI4_P2_DA2_PROP_SIZE_PREFIX "UNISPLIT_RPI4_P2_DA2_PROP_SIZE=0x"
++#define RPI4_P2_DA2_AFTER_TERM_CHECK "UNISPLIT_RPI4_P2_DA2_AFTER_TERM_CHECK\n"
++#define RPI4_P2_DA2_BEFORE_SIZE_READ "UNISPLIT_RPI4_P2_DA2_BEFORE_SIZE_READ\n"
++#define RPI4_P2_DA2_AFTER_SIZE_READ "UNISPLIT_RPI4_P2_DA2_AFTER_SIZE_READ\n"
++#define RPI4_P2_DA2_BEFORE_PARSE "UNISPLIT_RPI4_P2_DA2_BEFORE_PARSE\n"
++#define RPI4_P2_DA2_AFTER_PARSE "UNISPLIT_RPI4_P2_DA2_AFTER_PARSE\n"
++#define RPI4_P2_DA3_SIZE_PREFIX "UNISPLIT_RPI4_P2_DA3_SIZE=0x"
++#define RPI4_P2_DA3_BASE_PREFIX "UNISPLIT_RPI4_P2_DA3_BASE=0x"
++#define RPI4_P2_DA4_BEFORE_WRITEOUT "UNISPLIT_RPI4_P2_DA4_BEFORE_WRITEOUT\n"
++#define RPI4_P2_DA4_AFTER_WRITEOUT "UNISPLIT_RPI4_P2_DA4_AFTER_WRITEOUT\n"
++#define RPI4_P2_DA4_RC_PREFIX "UNISPLIT_RPI4_P2_DA4_RC=0x"
++#define RPI4_P2_TO1_ENTRY "UNISPLIT_RPI4_P2_TO1_ENTRY\n"
++#define RPI4_P2_TO1_PARENT_PREFIX "UNISPLIT_RPI4_P2_TO1_PARENT=0x"
++#define RPI4_P2_TO1_ADDR_CELLS_PREFIX "UNISPLIT_RPI4_P2_TO1_ADDR_CELLS=0x"
++#define RPI4_P2_TO1_SIZE_CELLS_PREFIX "UNISPLIT_RPI4_P2_TO1_SIZE_CELLS=0x"
++#define RPI4_P2_TO1_PARENT_ADDR_CELLS_PREFIX "UNISPLIT_RPI4_P2_TO1_PARENT_ADDR_CELLS=0x"
++#define RPI4_P2_TO2_BEFORE_RANGES "UNISPLIT_RPI4_P2_TO2_BEFORE_RANGES\n"
++#define RPI4_P2_TO2_AFTER_RANGES "UNISPLIT_RPI4_P2_TO2_AFTER_RANGES\n"
++#define RPI4_P2_TO2_RANGES_PTR_PREFIX "UNISPLIT_RPI4_P2_TO2_RANGES_PTR=0x"
++#define RPI4_P2_TO2_RANGES_LEN_PREFIX "UNISPLIT_RPI4_P2_TO2_RANGES_LEN=0x"
++#define RPI4_P2_TO3_BEFORE_CHILD_BASE "UNISPLIT_RPI4_P2_TO3_BEFORE_CHILD_BASE\n"
++#define RPI4_P2_TO3_AFTER_CHILD_BASE "UNISPLIT_RPI4_P2_TO3_AFTER_CHILD_BASE\n"
++#define RPI4_P2_TO3_CHILD_BASE_PREFIX "UNISPLIT_RPI4_P2_TO3_CHILD_BASE=0x"
++#define RPI4_P2_TO3_BEFORE_INPUT_ADDR "UNISPLIT_RPI4_P2_TO3_BEFORE_INPUT_ADDR\n"
++#define RPI4_P2_TO3_AFTER_INPUT_ADDR "UNISPLIT_RPI4_P2_TO3_AFTER_INPUT_ADDR\n"
++#define RPI4_P2_TO3_INPUT_ADDR_PREFIX "UNISPLIT_RPI4_P2_TO3_INPUT_ADDR=0x"
++#define RPI4_P2_TO3_BEFORE_PARENT_BASE "UNISPLIT_RPI4_P2_TO3_BEFORE_PARENT_BASE\n"
++#define RPI4_P2_TO3_AFTER_PARENT_BASE "UNISPLIT_RPI4_P2_TO3_AFTER_PARENT_BASE\n"
++#define RPI4_P2_TO3_PARENT_BASE_PREFIX "UNISPLIT_RPI4_P2_TO3_PARENT_BASE=0x"
++#define RPI4_P2_TO3_BEFORE_RANGE_SIZE "UNISPLIT_RPI4_P2_TO3_BEFORE_RANGE_SIZE\n"
++#define RPI4_P2_TO3_AFTER_RANGE_SIZE "UNISPLIT_RPI4_P2_TO3_AFTER_RANGE_SIZE\n"
++#define RPI4_P2_TO3_RANGE_SIZE_PREFIX "UNISPLIT_RPI4_P2_TO3_RANGE_SIZE=0x"
++#define RPI4_P2_TO4_BEFORE_RANGE_CHECK "UNISPLIT_RPI4_P2_TO4_BEFORE_RANGE_CHECK\n"
++#define RPI4_P2_TO4_AFTER_RANGE_CHECK "UNISPLIT_RPI4_P2_TO4_AFTER_RANGE_CHECK\n"
++#define RPI4_P2_TO4_RANGE_OK_PREFIX "UNISPLIT_RPI4_P2_TO4_RANGE_OK=0x"
++#define RPI4_P2_TC1_BEFORE_SRC "UNISPLIT_RPI4_P2_TC1_BEFORE_SRC\n"
++#define RPI4_P2_TC1_AFTER_SRC "UNISPLIT_RPI4_P2_TC1_AFTER_SRC\n"
++#define RPI4_P2_TC1_SRC_PTR_PREFIX "UNISPLIT_RPI4_P2_TC1_SRC_PTR=0x"
++#define RPI4_P2_TC2_BEFORE_DST "UNISPLIT_RPI4_P2_TC2_BEFORE_DST\n"
++#define RPI4_P2_TC2_AFTER_DST "UNISPLIT_RPI4_P2_TC2_AFTER_DST\n"
++#define RPI4_P2_TC2_DST_PTR_PREFIX "UNISPLIT_RPI4_P2_TC2_DST_PTR=0x"
++#define RPI4_P2_TC2_ADDR_BUF_PTR_PREFIX "UNISPLIT_RPI4_P2_TC2_ADDR_BUF_PTR=0x"
++#define RPI4_P2_TC3_BEFORE_COPY "UNISPLIT_RPI4_P2_TC3_BEFORE_COPY\n"
++#define RPI4_P2_TC3_AFTER_COPY "UNISPLIT_RPI4_P2_TC3_AFTER_COPY\n"
++#define RPI4_P2_TC3_BEFORE_CELL0 "UNISPLIT_RPI4_P2_TC3_BEFORE_CELL0\n"
++#define RPI4_P2_TC3_AFTER_CELL0 "UNISPLIT_RPI4_P2_TC3_AFTER_CELL0\n"
++#define RPI4_P2_TC3_BEFORE_CELL1 "UNISPLIT_RPI4_P2_TC3_BEFORE_CELL1\n"
++#define RPI4_P2_TC3_AFTER_CELL1 "UNISPLIT_RPI4_P2_TC3_AFTER_CELL1\n"
++#define RPI4_P2_TC3_COPY_CELLS_PREFIX "UNISPLIT_RPI4_P2_TC3_COPY_CELLS=0x"
++#define RPI4_P2_TC3_COPY_BYTES_PREFIX "UNISPLIT_RPI4_P2_TC3_COPY_BYTES=0x"
++#define RPI4_P2_TC3_WORD0_PREFIX "UNISPLIT_RPI4_P2_TC3_WORD0=0x"
++#define RPI4_P2_TC3_WORD1_PREFIX "UNISPLIT_RPI4_P2_TC3_WORD1=0x"
++#define RPI4_P2_TC4_BEFORE_TRANSLATE "UNISPLIT_RPI4_P2_TC4_BEFORE_TRANSLATE\n"
++#define RPI4_P2_TC4_AFTER_TRANSLATE "UNISPLIT_RPI4_P2_TC4_AFTER_TRANSLATE\n"
++#define RPI4_P2_TC4_RC_PREFIX "UNISPLIT_RPI4_P2_TC4_RC=0x"
++#define RPI4_P2_TO5_BEFORE_PARENT_COPY "UNISPLIT_RPI4_P2_TO5_BEFORE_PARENT_COPY\n"
++#define RPI4_P2_TO5_AFTER_PARENT_COPY "UNISPLIT_RPI4_P2_TO5_AFTER_PARENT_COPY\n"
++#define RPI4_P2_TO5_BEFORE_TRANSLATE "UNISPLIT_RPI4_P2_TO5_BEFORE_TRANSLATE\n"
++#define RPI4_P2_TO5_AFTER_TRANSLATE "UNISPLIT_RPI4_P2_TO5_AFTER_TRANSLATE\n"
++#define RPI4_P2_TO5_RESULT_PREFIX "UNISPLIT_RPI4_P2_TO5_RESULT=0x"
++#define RPI4_P2_TO5_RC_PREFIX "UNISPLIT_RPI4_P2_TO5_RC=0x"
++#define RPI4_P2_TO_FAIL_NO_RANGES "UNISPLIT_RPI4_P2_TO_FAIL_NO_RANGES\n"
++#define RPI4_P2_TO_FAIL_NOT_FOUND "UNISPLIT_RPI4_P2_TO_FAIL_NOT_FOUND\n"
++#define RPI4_P2_DA2T_ENTRY "UNISPLIT_RPI4_P2_DA2T_ENTRY\n"
++#define RPI4_P2_DA2T_PARENT_PREFIX "UNISPLIT_RPI4_P2_DA2T_PARENT=0x"
++#define RPI4_P2_DA2T_BEFORE_COUNT "UNISPLIT_RPI4_P2_DA2T_BEFORE_COUNT\n"
++#define RPI4_P2_DA2T_AFTER_COUNT "UNISPLIT_RPI4_P2_DA2T_AFTER_COUNT\n"
++#define RPI4_P2_DA2T_ADDR_CELLS_PREFIX "UNISPLIT_RPI4_P2_DA2T_ADDR_CELLS=0x"
++#define RPI4_P2_DA2T_SIZE_CELLS_PREFIX "UNISPLIT_RPI4_P2_DA2T_SIZE_CELLS=0x"
++#define RPI4_P2_DA2T_BEFORE_COPY "UNISPLIT_RPI4_P2_DA2T_BEFORE_COPY\n"
++#define RPI4_P2_DA2T_AFTER_COPY "UNISPLIT_RPI4_P2_DA2T_AFTER_COPY\n"
++#define RPI4_P2_DA2T_BEFORE_SWITCH_PARENT "UNISPLIT_RPI4_P2_DA2T_BEFORE_SWITCH_PARENT\n"
++#define RPI4_P2_DA2T_AFTER_SWITCH_PARENT "UNISPLIT_RPI4_P2_DA2T_AFTER_SWITCH_PARENT\n"
++#define RPI4_P2_DA2T_LOOP_PARENT_PREFIX "UNISPLIT_RPI4_P2_DA2T_LOOP_PARENT=0x"
++#define RPI4_P2_DA2T_BEFORE_PARENT_COUNT "UNISPLIT_RPI4_P2_DA2T_BEFORE_PARENT_COUNT\n"
++#define RPI4_P2_DA2T_AFTER_PARENT_COUNT "UNISPLIT_RPI4_P2_DA2T_AFTER_PARENT_COUNT\n"
++#define RPI4_P2_DA2T_PARENT_ADDR_CELLS_PREFIX "UNISPLIT_RPI4_P2_DA2T_PARENT_ADDR_CELLS=0x"
++#define RPI4_P2_DA2T_PARENT_SIZE_CELLS_PREFIX "UNISPLIT_RPI4_P2_DA2T_PARENT_SIZE_CELLS=0x"
++#define RPI4_P2_DA2T_BEFORE_TRANSLATE_ONE "UNISPLIT_RPI4_P2_DA2T_BEFORE_TRANSLATE_ONE\n"
++#define RPI4_P2_DA2T_AFTER_TRANSLATE_ONE "UNISPLIT_RPI4_P2_DA2T_AFTER_TRANSLATE_ONE\n"
++#define RPI4_P2_DA2T_TRANSLATE_ONE_RC_PREFIX "UNISPLIT_RPI4_P2_DA2T_TRANSLATE_ONE_RC=0x"
++#define RPI4_P2_DA2T_BEFORE_ROOT_READ "UNISPLIT_RPI4_P2_DA2T_BEFORE_ROOT_READ\n"
++#define RPI4_P2_DA2T_AFTER_ROOT_READ "UNISPLIT_RPI4_P2_DA2T_AFTER_ROOT_READ\n"
++#define RPI4_P2_DA2T_RESULT_PREFIX "UNISPLIT_RPI4_P2_DA2T_RESULT=0x"
++#define RPI4_P2_DA_FAIL_PARENT "UNISPLIT_RPI4_P2_DA_FAIL_PARENT\n"
++#define RPI4_P2_DA_FAIL_ADDR_CELLS "UNISPLIT_RPI4_P2_DA_FAIL_ADDR_CELLS\n"
++#define RPI4_P2_DA_FAIL_SIZE_CELLS "UNISPLIT_RPI4_P2_DA_FAIL_SIZE_CELLS\n"
++#define RPI4_P2_DA_FAIL_PROP "UNISPLIT_RPI4_P2_DA_FAIL_PROP\n"
++#define RPI4_P2_DA_FAIL_NOSPACE "UNISPLIT_RPI4_P2_DA_FAIL_NOSPACE\n"
++#define RPI4_P2_DA_FAIL_BAD_ADDR "UNISPLIT_RPI4_P2_DA_FAIL_BAD_ADDR\n"
++#define RPI4_P2_DA_FAIL_TRANSLATE_PARENT "UNISPLIT_RPI4_P2_DA_FAIL_TRANSLATE_PARENT\n"
++#define RPI4_P2_DA_FAIL_TRANSLATE_COUNTS "UNISPLIT_RPI4_P2_DA_FAIL_TRANSLATE_COUNTS\n"
++#define RPI4_P2_DA_FAIL_TRANSLATE_ONE "UNISPLIT_RPI4_P2_DA_FAIL_TRANSLATE_ONE\n"
++
++static inline __u16 rpi4_da_uart_read(__u64 offset)
++{
++	return *((volatile __u16 *)(RPI4_DA_UART_BASE + offset));
++}
++
++static inline void rpi4_da_uart_write(__u64 offset, __u16 value)
++{
++	*((volatile __u16 *)(RPI4_DA_UART_BASE + offset)) = value;
++}
++
++static void rpi4_da_uart_putc(char ch)
++{
++	while (rpi4_da_uart_read(RPI4_DA_UARTFR_OFFSET) & RPI4_DA_FR_TXFF)
++		;
++
++	rpi4_da_uart_write(RPI4_DA_UARTDR_OFFSET, (__u16)(ch & 0xff));
++}
++
++static void rpi4_da_uart_puts(const char *s)
++{
++	while (*s) {
++		if (*s == '\n')
++			rpi4_da_uart_putc('\r');
++		rpi4_da_uart_putc(*s++);
++	}
++}
++
++static void rpi4_da_uart_put_hex_nibble(__u8 nibble)
++{
++	static const char hex[] = "0123456789abcdef";
++
++	rpi4_da_uart_putc(hex[nibble & 0xf]);
++}
++
++static void rpi4_da_uart_put_hex32(__u32 value)
++{
++	int shift;
++
++	for (shift = 28; shift >= 0; shift -= 4)
++		rpi4_da_uart_put_hex_nibble((__u8)(value >> shift));
++}
++
++static void rpi4_da_uart_put_hex64(__u64 value)
++{
++	int shift;
++
++	for (shift = 60; shift >= 0; shift -= 4)
++		rpi4_da_uart_put_hex_nibble((__u8)(value >> shift));
++}
++#endif
++
+ int fdt_getprop_u32_by_offset(const void *fdt, int offset,
+ 		const char *name, uint32_t *out)
+ {
+@@ -151,11 +318,44 @@
+ 				int na, int ns, int pna, const char *rprop)
+ {
+ 	const fdt32_t *ranges;
++	const fdt32_t *copy_src;
++	fdt32_t *copy_dst;
++	int copy_i;
+ 	int rlen;
+ 	int rone;
++	int rc;
+ 	uint64_t offset = FDT_BAD_ADDR;
++	uint64_t child_base = 0, parent_base = 0, range_size = 0, input_addr = 0;
++	__u32 range_ok = 0;
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_TO1_ENTRY);
++	rpi4_da_uart_puts(RPI4_P2_TO1_PARENT_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)parent);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_TO1_ADDR_CELLS_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)na);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_TO1_SIZE_CELLS_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)ns);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_TO1_PARENT_ADDR_CELLS_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)pna);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_TO2_BEFORE_RANGES);
++#endif
+ 	ranges = fdt_getprop(fdt, parent, rprop, &rlen);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_TO2_AFTER_RANGES);
++	rpi4_da_uart_puts(RPI4_P2_TO2_RANGES_PTR_PREFIX);
++	rpi4_da_uart_put_hex64((__u64)(__uptr)ranges);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_TO2_RANGES_LEN_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)rlen);
++	rpi4_da_uart_puts("\n");
++	if (!ranges)
++		rpi4_da_uart_puts(RPI4_P2_TO_FAIL_NO_RANGES);
++#endif
+ 	if (!ranges)
+ 		return 1;
+ 	if (rlen == 0) {
+@@ -169,21 +369,145 @@
+ 	rlen /= 4;
+ 	rone = na + pna + ns;
+ 	for (; rlen >= rone; rlen -= rone, ranges += rone) {
+-		offset = fdt_default_map(addr, ranges, na, ns, pna);
++		range_ok = 0;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_da_uart_puts(RPI4_P2_TO3_BEFORE_CHILD_BASE);
++#endif
++		child_base = fdt_reg_read_number(ranges, na);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_da_uart_puts(RPI4_P2_TO3_AFTER_CHILD_BASE);
++		rpi4_da_uart_puts(RPI4_P2_TO3_CHILD_BASE_PREFIX);
++		rpi4_da_uart_put_hex64((__u64)child_base);
++		rpi4_da_uart_puts("\n");
++		rpi4_da_uart_puts(RPI4_P2_TO3_BEFORE_INPUT_ADDR);
++#endif
++		input_addr = fdt_reg_read_number(addr, na);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_da_uart_puts(RPI4_P2_TO3_AFTER_INPUT_ADDR);
++		rpi4_da_uart_puts(RPI4_P2_TO3_INPUT_ADDR_PREFIX);
++		rpi4_da_uart_put_hex64((__u64)input_addr);
++		rpi4_da_uart_puts("\n");
++		rpi4_da_uart_puts(RPI4_P2_TO3_BEFORE_PARENT_BASE);
++#endif
++		parent_base = fdt_reg_read_number(ranges + na, pna);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_da_uart_puts(RPI4_P2_TO3_AFTER_PARENT_BASE);
++		rpi4_da_uart_puts(RPI4_P2_TO3_PARENT_BASE_PREFIX);
++		rpi4_da_uart_put_hex64((__u64)parent_base);
++		rpi4_da_uart_puts("\n");
++		rpi4_da_uart_puts(RPI4_P2_TO3_BEFORE_RANGE_SIZE);
++#endif
++		range_size = fdt_reg_read_number(ranges + na + pna, ns);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_da_uart_puts(RPI4_P2_TO3_AFTER_RANGE_SIZE);
++		rpi4_da_uart_puts(RPI4_P2_TO3_RANGE_SIZE_PREFIX);
++		rpi4_da_uart_put_hex64((__u64)range_size);
++		rpi4_da_uart_puts("\n");
++		rpi4_da_uart_puts(RPI4_P2_TO4_BEFORE_RANGE_CHECK);
++#endif
++		range_ok = (__u32)!((input_addr < child_base) ||
++				   (input_addr >= (child_base + range_size)));
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_da_uart_puts(RPI4_P2_TO4_AFTER_RANGE_CHECK);
++		rpi4_da_uart_puts(RPI4_P2_TO4_RANGE_OK_PREFIX);
++		rpi4_da_uart_put_hex32(range_ok);
++		rpi4_da_uart_puts("\n");
++#endif
++		if (!range_ok)
++			continue;
++		offset = input_addr - child_base;
+ 		if (offset != FDT_BAD_ADDR)
+ 			break;
+ 	}
+ 	if (offset == FDT_BAD_ADDR) {
+ 		uk_pr_debug("not found !\n");
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_da_uart_puts(RPI4_P2_TO_FAIL_NOT_FOUND);
++#endif
+ 		return 1;
+ 	}
+-	memcpy(addr, ranges + na, 4 * pna);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_TO5_BEFORE_PARENT_COPY);
++	rpi4_da_uart_puts(RPI4_P2_TC1_BEFORE_SRC);
++#endif
++	copy_src = ranges + na;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_TC1_AFTER_SRC);
++	rpi4_da_uart_puts(RPI4_P2_TC1_SRC_PTR_PREFIX);
++	rpi4_da_uart_put_hex64((__u64)(__uptr)copy_src);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_TC2_BEFORE_DST);
++#endif
++	copy_dst = addr;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_TC2_AFTER_DST);
++	rpi4_da_uart_puts(RPI4_P2_TC2_DST_PTR_PREFIX);
++	rpi4_da_uart_put_hex64((__u64)(__uptr)copy_dst);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_TC2_ADDR_BUF_PTR_PREFIX);
++	rpi4_da_uart_put_hex64((__u64)(__uptr)addr);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_TC3_BEFORE_COPY);
++	rpi4_da_uart_puts(RPI4_P2_TC3_COPY_CELLS_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)pna);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_TC3_COPY_BYTES_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)(4 * pna));
++	rpi4_da_uart_puts("\n");
++	if (pna > 0) {
++		rpi4_da_uart_puts(RPI4_P2_TC3_WORD0_PREFIX);
++		rpi4_da_uart_put_hex32((__u32)copy_src[0]);
++		rpi4_da_uart_puts("\n");
++	}
++	if (pna > 1) {
++		rpi4_da_uart_puts(RPI4_P2_TC3_WORD1_PREFIX);
++		rpi4_da_uart_put_hex32((__u32)copy_src[1]);
++		rpi4_da_uart_puts("\n");
++	}
++#endif
++	for (copy_i = 0; copy_i < pna; ++copy_i) {
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		if (copy_i == 0)
++			rpi4_da_uart_puts(RPI4_P2_TC3_BEFORE_CELL0);
++		else if (copy_i == 1)
++			rpi4_da_uart_puts(RPI4_P2_TC3_BEFORE_CELL1);
++#endif
++		copy_dst[copy_i] = copy_src[copy_i];
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		if (copy_i == 0)
++			rpi4_da_uart_puts(RPI4_P2_TC3_AFTER_CELL0);
++		else if (copy_i == 1)
++			rpi4_da_uart_puts(RPI4_P2_TC3_AFTER_CELL1);
++#endif
++	}
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_TC3_AFTER_COPY);
++	rpi4_da_uart_puts(RPI4_P2_TO5_AFTER_PARENT_COPY);
++#endif
+ 
+ finish:
+ 	uk_pr_info("parent translation for:%p %x\n", addr, pna);
+ 
+ 	/* Translate it into parent bus space */
+-	return fdt_default_translate(addr, offset, pna);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_TC4_BEFORE_TRANSLATE);
++	rpi4_da_uart_puts(RPI4_P2_TO5_BEFORE_TRANSLATE);
++#endif
++	rc = fdt_default_translate(addr, offset, pna);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_TC4_AFTER_TRANSLATE);
++	rpi4_da_uart_puts(RPI4_P2_TC4_RC_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)rc);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_TO5_AFTER_TRANSLATE);
++	rpi4_da_uart_puts(RPI4_P2_TO5_RESULT_PREFIX);
++	rpi4_da_uart_put_hex64((__u64)fdt_reg_read_number(addr, pna));
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_TO5_RC_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)rc);
++	rpi4_da_uart_puts("\n");
++#endif
++	return rc;
+ }
+ 
+ /*
+@@ -200,34 +524,96 @@
+ 	uint64_t result = FDT_BAD_ADDR;
+ 
+ 	/* Get parent */
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA2T_ENTRY);
++#endif
+ 	parent = fdt_parent_offset(fdt, node_offset);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA2T_PARENT_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)parent);
++	rpi4_da_uart_puts("\n");
++	if (parent < 0)
++		rpi4_da_uart_puts(RPI4_P2_DA_FAIL_TRANSLATE_PARENT);
++#endif
+ 	if (parent < 0)
+ 		goto bail;
+ 
+ 	/* Count address cells & copy address locally */
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA2T_BEFORE_COUNT);
++#endif
+ 	fdt_default_count_cells(fdt, parent, &na, &ns);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA2T_AFTER_COUNT);
++	rpi4_da_uart_puts(RPI4_P2_DA2T_ADDR_CELLS_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)na);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_DA2T_SIZE_CELLS_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)ns);
++	rpi4_da_uart_puts("\n");
++	if (!FDT_CHECK_COUNTS(na, ns))
++		rpi4_da_uart_puts(RPI4_P2_DA_FAIL_TRANSLATE_COUNTS);
++#endif
+ 	if (!FDT_CHECK_COUNTS(na, ns)) {
+ 		uk_pr_err("Bad cell count for %s\n",
+ 		       fdt_get_name(fdt, node_offset, NULL));
+ 		goto bail;
+ 	}
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA2T_BEFORE_COPY);
++#endif
+ 	memcpy(addr, regs, na * 4);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA2T_AFTER_COPY);
++#endif
+ 
+ 	/* Translate */
+ 	for (;;) {
+ 		/* Switch to parent bus */
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_da_uart_puts(RPI4_P2_DA2T_BEFORE_SWITCH_PARENT);
++#endif
+ 		node_offset = parent;
+ 		parent = fdt_parent_offset(fdt, node_offset);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_da_uart_puts(RPI4_P2_DA2T_AFTER_SWITCH_PARENT);
++		rpi4_da_uart_puts(RPI4_P2_DA2T_LOOP_PARENT_PREFIX);
++		rpi4_da_uart_put_hex32((__u32)parent);
++		rpi4_da_uart_puts("\n");
++#endif
+ 
+ 		/* If root, we have finished */
+ 		if (parent < 0) {
+ 			uk_pr_debug("reached root node\n");
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++			rpi4_da_uart_puts(RPI4_P2_DA2T_BEFORE_ROOT_READ);
++#endif
+ 			result = fdt_reg_read_number(addr, na);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++			rpi4_da_uart_puts(RPI4_P2_DA2T_AFTER_ROOT_READ);
++			rpi4_da_uart_puts(RPI4_P2_DA2T_RESULT_PREFIX);
++			rpi4_da_uart_put_hex64((__u64)result);
++			rpi4_da_uart_puts("\n");
++#endif
+ 			break;
+ 		}
+ 
+ 		/* Get new parent bus and counts */
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_da_uart_puts(RPI4_P2_DA2T_BEFORE_PARENT_COUNT);
++#endif
+ 		fdt_default_count_cells(fdt, parent, &pna, &pns);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_da_uart_puts(RPI4_P2_DA2T_AFTER_PARENT_COUNT);
++		rpi4_da_uart_puts(RPI4_P2_DA2T_PARENT_ADDR_CELLS_PREFIX);
++		rpi4_da_uart_put_hex32((__u32)pna);
++		rpi4_da_uart_puts("\n");
++		rpi4_da_uart_puts(RPI4_P2_DA2T_PARENT_SIZE_CELLS_PREFIX);
++		rpi4_da_uart_put_hex32((__u32)pns);
++		rpi4_da_uart_puts("\n");
++		if (!FDT_CHECK_COUNTS(pna, pns))
++			rpi4_da_uart_puts(RPI4_P2_DA_FAIL_TRANSLATE_COUNTS);
++#endif
+ 		if (!FDT_CHECK_COUNTS(pna, pns)) {
+ 			uk_pr_err("Bad cell count for %s\n",
+ 				fdt_get_name(fdt, node_offset, NULL));
+@@ -238,9 +624,24 @@
+ 			 pna, pns, fdt_get_name(fdt, parent, NULL));
+ 
+ 		/* Apply bus translation */
+-		if (fdt_translate_one(fdt, node_offset,
+-					addr, na, ns, pna, "ranges"))
++		{
++			int trc;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++			rpi4_da_uart_puts(RPI4_P2_DA2T_BEFORE_TRANSLATE_ONE);
++#endif
++			trc = fdt_translate_one(fdt, node_offset,
++						addr, na, ns, pna, "ranges");
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++			rpi4_da_uart_puts(RPI4_P2_DA2T_AFTER_TRANSLATE_ONE);
++			rpi4_da_uart_puts(RPI4_P2_DA2T_TRANSLATE_ONE_RC_PREFIX);
++			rpi4_da_uart_put_hex32((__u32)trc);
++			rpi4_da_uart_puts("\n");
++			if (trc)
++				rpi4_da_uart_puts(RPI4_P2_DA_FAIL_TRANSLATE_ONE);
++#endif
++			if (trc)
+ 			break;
++		}
+ 
+ 		/* Complete the move up one level */
+ 		na = pna;
+@@ -254,48 +655,144 @@
+ 			uint64_t *addr, uint64_t *size)
+ {
+ 	int parentoffset;
+-	int len, prop_addr, prop_size;
++	int len, prop_addr, prop_size, rc;
+ 	int naddr, nsize, term_size;
+ 	const void *regs;
++	uint64_t decoded_addr, decoded_size;
+ 
+ 	UK_ASSERT(addr && size);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA1_ENTRY);
++	rpi4_da_uart_puts(RPI4_P2_DA1_NODE_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)nodeoffset);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_DA1_INDEX_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)index);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_DA1_BEFORE_PARENT);
++#endif
+ 
+ 	/*
+ 	 * Get address,size cell from parent
+ 	 * DT Spec v0.2, section 2.3.5 "#address-cells and #size-cells"
+ 	 */
+ 	parentoffset = fdt_parent_offset(fdt, nodeoffset);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA1_AFTER_PARENT);
++	rpi4_da_uart_puts(RPI4_P2_DA1_PARENT_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)parentoffset);
++	rpi4_da_uart_puts("\n");
++	if (parentoffset < 0)
++		rpi4_da_uart_puts(RPI4_P2_DA_FAIL_PARENT);
++#endif
+ 	if (parentoffset < 0)
+ 		return parentoffset;
+ 
+ 	naddr = fdt_address_cells(fdt, parentoffset);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA1_ADDR_CELLS_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)naddr);
++	rpi4_da_uart_puts("\n");
++	if (naddr < 0 || naddr >= FDT_MAX_NCELLS)
++		rpi4_da_uart_puts(RPI4_P2_DA_FAIL_ADDR_CELLS);
++#endif
+ 	if (naddr < 0 || naddr >= FDT_MAX_NCELLS)
+ 		return naddr;
+ 
+ 	nsize = fdt_size_cells(fdt, parentoffset);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA1_SIZE_CELLS_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)nsize);
++	rpi4_da_uart_puts("\n");
++	if (nsize < 0 || nsize >= FDT_MAX_NCELLS)
++		rpi4_da_uart_puts(RPI4_P2_DA_FAIL_SIZE_CELLS);
++#endif
+ 	if (nsize < 0 || nsize >= FDT_MAX_NCELLS)
+ 		return nsize;
+ 
+ 	/* Get reg content */
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA1_BEFORE_PROP);
++#endif
+ 	regs = fdt_getprop(fdt, nodeoffset, "reg", &len);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA1_AFTER_PROP);
++	rpi4_da_uart_puts(RPI4_P2_DA1_PROP_PTR_PREFIX);
++	rpi4_da_uart_put_hex64((__u64)(__uptr)regs);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_DA1_PROP_LEN_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)len);
++	rpi4_da_uart_puts("\n");
++	if (regs == NULL)
++		rpi4_da_uart_puts(RPI4_P2_DA_FAIL_PROP);
++#endif
+ 	if (regs == NULL)
+ 		return len;
+ 
+ 	term_size = sizeof(fdt32_t) * (nsize + naddr);
+ 	prop_addr = term_size * index;
+ 	prop_size = prop_addr + sizeof(fdt32_t) * naddr;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA2_BEFORE_TERM_CHECK);
++	rpi4_da_uart_puts(RPI4_P2_DA2_TERM_SIZE_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)term_size);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_DA2_PROP_ADDR_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)prop_addr);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_DA2_PROP_SIZE_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)prop_size);
++	rpi4_da_uart_puts("\n");
++#endif
+ 
+ 	/* The reg content must cover the reg term[index] at least */
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	if (len < (prop_addr + term_size))
++		rpi4_da_uart_puts(RPI4_P2_DA_FAIL_NOSPACE);
++#endif
+ 	if (len < (prop_addr + term_size))
+ 		return -FDT_ERR_NOSPACE;
+-
+-	*size = fdt_reg_read_number(regs + prop_size, nsize);
+-	*addr = fdt_translate_address_by_ranges(fdt, nodeoffset,
+-						regs + prop_addr);
+-
+-	if (*addr == FDT_BAD_ADDR)
+-		return -FDT_ERR_NOTFOUND;
+-	return 0;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA2_AFTER_TERM_CHECK);
++	rpi4_da_uart_puts(RPI4_P2_DA2_BEFORE_SIZE_READ);
++#endif
++
++	decoded_size = fdt_reg_read_number(regs + prop_size, nsize);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA2_AFTER_SIZE_READ);
++	rpi4_da_uart_puts(RPI4_P2_DA3_SIZE_PREFIX);
++	rpi4_da_uart_put_hex64((__u64)decoded_size);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_DA2_BEFORE_PARSE);
++#endif
++	decoded_addr = fdt_translate_address_by_ranges(fdt, nodeoffset,
++						       regs + prop_addr);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA2_AFTER_PARSE);
++	rpi4_da_uart_puts(RPI4_P2_DA3_BASE_PREFIX);
++	rpi4_da_uart_put_hex64((__u64)decoded_addr);
++	rpi4_da_uart_puts("\n");
++	rpi4_da_uart_puts(RPI4_P2_DA4_BEFORE_WRITEOUT);
++#endif
++	*size = decoded_size;
++	*addr = decoded_addr;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA4_AFTER_WRITEOUT);
++#endif
++
++	rc = 0;
++	if (*addr == FDT_BAD_ADDR) {
++		rc = -FDT_ERR_NOTFOUND;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_da_uart_puts(RPI4_P2_DA_FAIL_BAD_ADDR);
++#endif
++	}
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_da_uart_puts(RPI4_P2_DA4_RC_PREFIX);
++	rpi4_da_uart_put_hex32((__u32)rc);
++	rpi4_da_uart_puts("\n");
++#endif
++	return rc;
+ }
+ 
+ int fdt_node_offset_by_compatible_list(const void *fdt, int startoffset,
+--- a/drivers/ukintctlr/gic/ukintctlr.c
++++ b/drivers/ukintctlr/gic/ukintctlr.c
+@@ -14,6 +14,77 @@
+ struct uk_intctlr_desc intctlr;
+ struct uk_intctlr_driver_ops ops;
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++#define RPI4_IRQP_UART_BASE 0xFE201000UL
++#define RPI4_IRQP_UARTDR_OFFSET 0x00UL
++#define RPI4_IRQP_UARTFR_OFFSET 0x18UL
++#define RPI4_IRQP_FR_TXFF (1U << 5)
++#define RPI4_P2_IRQP1_ENTRY "UNISPLIT_RPI4_P2_IRQP1_ENTRY\n"
++#define RPI4_P2_IRQP2_BEFORE_GICV2_PROBE "UNISPLIT_RPI4_P2_IRQP2_BEFORE_GICV2_PROBE\n"
++#define RPI4_P2_IRQP2_AFTER_GICV2_PROBE "UNISPLIT_RPI4_P2_IRQP2_AFTER_GICV2_PROBE\n"
++#define RPI4_P2_IRQP2_RC_PREFIX "UNISPLIT_RPI4_P2_IRQP2_RC=0x"
++#define RPI4_P2_IRQP2_GIC_PTR_PREFIX "UNISPLIT_RPI4_P2_IRQP2_GIC_PTR=0x"
++#define RPI4_P2_IRQP3_BEFORE_GIC_INIT "UNISPLIT_RPI4_P2_IRQP3_BEFORE_GIC_INIT\n"
++#define RPI4_P2_IRQP3_AFTER_GIC_INIT "UNISPLIT_RPI4_P2_IRQP3_AFTER_GIC_INIT\n"
++#define RPI4_P2_IRQP3_RC_PREFIX "UNISPLIT_RPI4_P2_IRQP3_RC=0x"
++#define RPI4_P2_IRQP4_BEFORE_REGISTER "UNISPLIT_RPI4_P2_IRQP4_BEFORE_REGISTER\n"
++#define RPI4_P2_IRQP4_AFTER_REGISTER "UNISPLIT_RPI4_P2_IRQP4_AFTER_REGISTER\n"
++#define RPI4_P2_IRQP4_RC_PREFIX "UNISPLIT_RPI4_P2_IRQP4_RC=0x"
++#define RPI4_P2_IRQP_FAIL_GICV2_PROBE "UNISPLIT_RPI4_P2_IRQP_FAIL_GICV2_PROBE\n"
++#define RPI4_P2_IRQP_FAIL_GIC_INIT "UNISPLIT_RPI4_P2_IRQP_FAIL_GIC_INIT\n"
++#define RPI4_P2_IRQP_FAIL_REGISTER "UNISPLIT_RPI4_P2_IRQP_FAIL_REGISTER\n"
++
++static inline __u16 rpi4_irqp_uart_read(__u64 offset)
++{
++	return *((volatile __u16 *)(RPI4_IRQP_UART_BASE + offset));
++}
++
++static inline void rpi4_irqp_uart_write(__u64 offset, __u16 value)
++{
++	*((volatile __u16 *)(RPI4_IRQP_UART_BASE + offset)) = value;
++}
++
++static void rpi4_irqp_uart_putc(char ch)
++{
++	while (rpi4_irqp_uart_read(RPI4_IRQP_UARTFR_OFFSET) & RPI4_IRQP_FR_TXFF)
++		;
++
++	rpi4_irqp_uart_write(RPI4_IRQP_UARTDR_OFFSET, (__u16)(ch & 0xff));
++}
++
++static void rpi4_irqp_uart_puts(const char *s)
++{
++	while (*s) {
++		if (*s == '\n')
++			rpi4_irqp_uart_putc('\r');
++		rpi4_irqp_uart_putc(*s++);
++	}
++}
++
++static void rpi4_irqp_uart_put_hex_nibble(__u8 nibble)
++{
++	static const char hex[] = "0123456789abcdef";
++
++	rpi4_irqp_uart_putc(hex[nibble & 0xf]);
++}
++
++static void rpi4_irqp_uart_put_hex32(__u32 value)
++{
++	int shift;
++
++	for (shift = 28; shift >= 0; shift -= 4)
++		rpi4_irqp_uart_put_hex_nibble((__u8)(value >> shift));
++}
++
++static void rpi4_irqp_uart_put_hex64(__u64 value)
++{
++	int shift;
++
++	for (shift = 60; shift >= 0; shift -= 4)
++		rpi4_irqp_uart_put_hex_nibble((__u8)(value >> shift));
++}
++#endif
++
+ #if CONFIG_LIBUKOFW
+ 
+ #include <libfdt.h>
+@@ -87,12 +158,40 @@
+ {
+ 	int rc = -ENODEV;
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqp_uart_puts(RPI4_P2_IRQP1_ENTRY);
++#endif
+ #if CONFIG_LIBUKINTCTLR_GICV2
+ 	/* First, try GICv2 */
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqp_uart_puts(RPI4_P2_IRQP2_BEFORE_GICV2_PROBE);
++#endif
+ 	rc = gicv2_probe(&gic);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqp_uart_puts(RPI4_P2_IRQP2_AFTER_GICV2_PROBE);
++	rpi4_irqp_uart_puts(RPI4_P2_IRQP2_RC_PREFIX);
++	rpi4_irqp_uart_put_hex32((__u32)rc);
++	rpi4_irqp_uart_puts("\n");
++	rpi4_irqp_uart_puts(RPI4_P2_IRQP2_GIC_PTR_PREFIX);
++	rpi4_irqp_uart_put_hex64((__u64)(__uptr)gic);
++	rpi4_irqp_uart_puts("\n");
++	if (unlikely(rc))
++		rpi4_irqp_uart_puts(RPI4_P2_IRQP_FAIL_GICV2_PROBE);
++#endif
+ 	if (rc == 0) {
+ 		intctlr.name = "GICv2";
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_irqp_uart_puts(RPI4_P2_IRQP3_BEFORE_GIC_INIT);
++#endif
+ 		rc = gic->ops.initialize();
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_irqp_uart_puts(RPI4_P2_IRQP3_AFTER_GIC_INIT);
++		rpi4_irqp_uart_puts(RPI4_P2_IRQP3_RC_PREFIX);
++		rpi4_irqp_uart_put_hex32((__u32)rc);
++		rpi4_irqp_uart_puts("\n");
++		if (unlikely(rc))
++			rpi4_irqp_uart_puts(RPI4_P2_IRQP_FAIL_GIC_INIT);
++#endif
+ 		goto init;
+ 	}
+ #endif /* CONFIG_LIBUKINTCTLR_GICV2 */
+@@ -120,5 +219,17 @@
+ 
+ 	intctlr.ops = &ops;
+ 
+-	return uk_intctlr_register(&intctlr);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqp_uart_puts(RPI4_P2_IRQP4_BEFORE_REGISTER);
++#endif
++	rc = uk_intctlr_register(&intctlr);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqp_uart_puts(RPI4_P2_IRQP4_AFTER_REGISTER);
++	rpi4_irqp_uart_puts(RPI4_P2_IRQP4_RC_PREFIX);
++	rpi4_irqp_uart_put_hex32((__u32)rc);
++	rpi4_irqp_uart_puts("\n");
++	if (unlikely(rc))
++		rpi4_irqp_uart_puts(RPI4_P2_IRQP_FAIL_REGISTER);
++#endif
++	return rc;
+ }
+--- a/drivers/ukintctlr/gic/gic-v2.c
++++ b/drivers/ukintctlr/gic/gic-v2.c
+@@ -32,6 +32,7 @@
+  */
+ #include <string.h>
+ #include <libfdt.h>
++#include <uk/config.h>
+ #include <uk/essentials.h>
+ #include <uk/print.h>
+ #include <uk/assert.h>
+@@ -87,6 +88,142 @@
+ 	NULL
+ };
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++#define RPI4_IRQG_UART_BASE 0xFE201000UL
++#define RPI4_IRQG_UARTDR_OFFSET 0x00UL
++#define RPI4_IRQG_UARTFR_OFFSET 0x18UL
++#define RPI4_IRQG_FR_TXFF (1U << 5)
++#define RPI4_P2_IRQP5_GICV2_PROBE_ENTRY "UNISPLIT_RPI4_P2_IRQP5_GICV2_PROBE_ENTRY\n"
++#define RPI4_P2_IRQP5_BEFORE_DO_PROBE "UNISPLIT_RPI4_P2_IRQP5_BEFORE_DO_PROBE\n"
++#define RPI4_P2_IRQP5_AFTER_DO_PROBE "UNISPLIT_RPI4_P2_IRQP5_AFTER_DO_PROBE\n"
++#define RPI4_P2_IRQP5_DO_PROBE_RC_PREFIX "UNISPLIT_RPI4_P2_IRQP5_DO_PROBE_RC=0x"
++#define RPI4_P2_IRQP5_DEV_PTR_PREFIX "UNISPLIT_RPI4_P2_IRQP5_DEV_PTR=0x"
++#define RPI4_P2_IRQP5_DIST_BASE_PREFIX "UNISPLIT_RPI4_P2_IRQP5_DIST_BASE=0x"
++#define RPI4_P2_IRQP5_DIST_SIZE_PREFIX "UNISPLIT_RPI4_P2_IRQP5_DIST_SIZE=0x"
++#define RPI4_P2_IRQP5_CPUIF_BASE_PREFIX "UNISPLIT_RPI4_P2_IRQP5_CPUIF_BASE=0x"
++#define RPI4_P2_IRQP5_CPUIF_SIZE_PREFIX "UNISPLIT_RPI4_P2_IRQP5_CPUIF_SIZE=0x"
++#define RPI4_P2_GP0_AFTER_RC_CHECK "UNISPLIT_RPI4_P2_GP0_AFTER_RC_CHECK\n"
++#define RPI4_P2_GP0_GIC_PTR_PREFIX "UNISPLIT_RPI4_P2_GP0_GIC_PTR=0x"
++#define RPI4_P2_GP0_BEFORE_LOG_FOUND "UNISPLIT_RPI4_P2_GP0_BEFORE_LOG_FOUND\n"
++#define RPI4_P2_GP0_AFTER_LOG_FOUND "UNISPLIT_RPI4_P2_GP0_AFTER_LOG_FOUND\n"
++#define RPI4_P2_GP0_BEFORE_LOG_DIST "UNISPLIT_RPI4_P2_GP0_BEFORE_LOG_DIST\n"
++#define RPI4_P2_GP0_AFTER_LOG_DIST "UNISPLIT_RPI4_P2_GP0_AFTER_LOG_DIST\n"
++#define RPI4_P2_GP0_BEFORE_LOG_CPUIF "UNISPLIT_RPI4_P2_GP0_BEFORE_LOG_CPUIF\n"
++#define RPI4_P2_GP0_AFTER_LOG_CPUIF "UNISPLIT_RPI4_P2_GP0_AFTER_LOG_CPUIF\n"
++#define RPI4_P2_GP1_BEFORE_SET_PRESENT "UNISPLIT_RPI4_P2_GP1_BEFORE_SET_PRESENT\n"
++#define RPI4_P2_GP1_AFTER_SET_PRESENT "UNISPLIT_RPI4_P2_GP1_AFTER_SET_PRESENT\n"
++#define RPI4_P2_GP1_BEFORE_SET_OPS "UNISPLIT_RPI4_P2_GP1_BEFORE_SET_OPS\n"
++#define RPI4_P2_GP1_AFTER_SET_OPS "UNISPLIT_RPI4_P2_GP1_AFTER_SET_OPS\n"
++#define RPI4_P2_GP1_OPS_PTR_PREFIX "UNISPLIT_RPI4_P2_GP1_OPS_PTR=0x"
++#define RPI4_P2_GS1_ENTRY "UNISPLIT_RPI4_P2_GS1_ENTRY\n"
++#define RPI4_P2_GS1_DST_PTR_PREFIX "UNISPLIT_RPI4_P2_GS1_DST_PTR=0x"
++#define RPI4_P2_GS1_INIT_PTR_PREFIX "UNISPLIT_RPI4_P2_GS1_INIT_PTR=0x"
++#define RPI4_P2_GS1_ACK_PTR_PREFIX "UNISPLIT_RPI4_P2_GS1_ACK_PTR=0x"
++#define RPI4_P2_GS1_HANDLE_PTR_PREFIX "UNISPLIT_RPI4_P2_GS1_HANDLE_PTR=0x"
++#define RPI4_P2_GS2_BEFORE_ASSIGN_INITIALIZE "UNISPLIT_RPI4_P2_GS2_BEFORE_ASSIGN_INITIALIZE\n"
++#define RPI4_P2_GS2_AFTER_ASSIGN_INITIALIZE "UNISPLIT_RPI4_P2_GS2_AFTER_ASSIGN_INITIALIZE\n"
++#define RPI4_P2_GS2_BEFORE_ASSIGN_ACK_IRQ "UNISPLIT_RPI4_P2_GS2_BEFORE_ASSIGN_ACK_IRQ\n"
++#define RPI4_P2_GS2_AFTER_ASSIGN_ACK_IRQ "UNISPLIT_RPI4_P2_GS2_AFTER_ASSIGN_ACK_IRQ\n"
++#define RPI4_P2_GS2_BEFORE_ASSIGN_EOI_IRQ "UNISPLIT_RPI4_P2_GS2_BEFORE_ASSIGN_EOI_IRQ\n"
++#define RPI4_P2_GS2_AFTER_ASSIGN_EOI_IRQ "UNISPLIT_RPI4_P2_GS2_AFTER_ASSIGN_EOI_IRQ\n"
++#define RPI4_P2_GS2_BEFORE_ASSIGN_ENABLE_IRQ "UNISPLIT_RPI4_P2_GS2_BEFORE_ASSIGN_ENABLE_IRQ\n"
++#define RPI4_P2_GS2_AFTER_ASSIGN_ENABLE_IRQ "UNISPLIT_RPI4_P2_GS2_AFTER_ASSIGN_ENABLE_IRQ\n"
++#define RPI4_P2_GS2_BEFORE_ASSIGN_DISABLE_IRQ "UNISPLIT_RPI4_P2_GS2_BEFORE_ASSIGN_DISABLE_IRQ\n"
++#define RPI4_P2_GS2_AFTER_ASSIGN_DISABLE_IRQ "UNISPLIT_RPI4_P2_GS2_AFTER_ASSIGN_DISABLE_IRQ\n"
++#define RPI4_P2_GS2_BEFORE_ASSIGN_SET_IRQ_TRIGGER "UNISPLIT_RPI4_P2_GS2_BEFORE_ASSIGN_SET_IRQ_TRIGGER\n"
++#define RPI4_P2_GS2_AFTER_ASSIGN_SET_IRQ_TRIGGER "UNISPLIT_RPI4_P2_GS2_AFTER_ASSIGN_SET_IRQ_TRIGGER\n"
++#define RPI4_P2_GS2_BEFORE_ASSIGN_SET_IRQ_PRIO "UNISPLIT_RPI4_P2_GS2_BEFORE_ASSIGN_SET_IRQ_PRIO\n"
++#define RPI4_P2_GS2_AFTER_ASSIGN_SET_IRQ_PRIO "UNISPLIT_RPI4_P2_GS2_AFTER_ASSIGN_SET_IRQ_PRIO\n"
++#define RPI4_P2_GS2_BEFORE_ASSIGN_SET_IRQ_AFFINITY "UNISPLIT_RPI4_P2_GS2_BEFORE_ASSIGN_SET_IRQ_AFFINITY\n"
++#define RPI4_P2_GS2_AFTER_ASSIGN_SET_IRQ_AFFINITY "UNISPLIT_RPI4_P2_GS2_AFTER_ASSIGN_SET_IRQ_AFFINITY\n"
++#define RPI4_P2_GS2_BEFORE_ASSIGN_HANDLE_IRQ "UNISPLIT_RPI4_P2_GS2_BEFORE_ASSIGN_HANDLE_IRQ\n"
++#define RPI4_P2_GS2_AFTER_ASSIGN_HANDLE_IRQ "UNISPLIT_RPI4_P2_GS2_AFTER_ASSIGN_HANDLE_IRQ\n"
++#define RPI4_P2_GS2_BEFORE_ASSIGN_GIC_SGI_GEN "UNISPLIT_RPI4_P2_GS2_BEFORE_ASSIGN_GIC_SGI_GEN\n"
++#define RPI4_P2_GS2_AFTER_ASSIGN_GIC_SGI_GEN "UNISPLIT_RPI4_P2_GS2_AFTER_ASSIGN_GIC_SGI_GEN\n"
++#define RPI4_P2_GP2_BEFORE_SET_DEVPTR "UNISPLIT_RPI4_P2_GP2_BEFORE_SET_DEVPTR\n"
++#define RPI4_P2_GP2_AFTER_SET_DEVPTR "UNISPLIT_RPI4_P2_GP2_AFTER_SET_DEVPTR\n"
++#define RPI4_P2_GP2_DEVPTR_SLOT_PREFIX "UNISPLIT_RPI4_P2_GP2_DEVPTR_SLOT=0x"
++#define RPI4_P2_GP3_BEFORE_RETURN "UNISPLIT_RPI4_P2_GP3_BEFORE_RETURN\n"
++#define RPI4_P2_GP3_RETURN_RC_PREFIX "UNISPLIT_RPI4_P2_GP3_RETURN_RC=0x"
++#define RPI4_P2_IRQP5_AFTER_SET_OPS "UNISPLIT_RPI4_P2_IRQP5_AFTER_SET_OPS\n"
++#define RPI4_P2_IRQP6_DO_PROBE_ENTRY "UNISPLIT_RPI4_P2_IRQP6_DO_PROBE_ENTRY\n"
++#define RPI4_P2_IRQP6_BI_PTR_PREFIX "UNISPLIT_RPI4_P2_IRQP6_BI_PTR=0x"
++#define RPI4_P2_IRQP6_DTB_PTR_PREFIX "UNISPLIT_RPI4_P2_IRQP6_DTB_PTR=0x"
++#define RPI4_P2_IRQP6_BEFORE_FIND_NODE "UNISPLIT_RPI4_P2_IRQP6_BEFORE_FIND_NODE\n"
++#define RPI4_P2_IRQP6_AFTER_FIND_NODE "UNISPLIT_RPI4_P2_IRQP6_AFTER_FIND_NODE\n"
++#define RPI4_P2_IRQP6_NODE_PREFIX "UNISPLIT_RPI4_P2_IRQP6_NODE=0x"
++#define RPI4_P2_IRQP6_BEFORE_DIST_ADDR "UNISPLIT_RPI4_P2_IRQP6_BEFORE_DIST_ADDR\n"
++#define RPI4_P2_IRQP6_AFTER_DIST_ADDR "UNISPLIT_RPI4_P2_IRQP6_AFTER_DIST_ADDR\n"
++#define RPI4_P2_IRQP6_DIST_RC_PREFIX "UNISPLIT_RPI4_P2_IRQP6_DIST_RC=0x"
++#define RPI4_P2_IRQP6_DIST_BASE_PREFIX "UNISPLIT_RPI4_P2_IRQP6_DIST_BASE=0x"
++#define RPI4_P2_IRQP6_DIST_SIZE_PREFIX "UNISPLIT_RPI4_P2_IRQP6_DIST_SIZE=0x"
++#define RPI4_P2_IRQP6_BEFORE_CPUIF_ADDR "UNISPLIT_RPI4_P2_IRQP6_BEFORE_CPUIF_ADDR\n"
++#define RPI4_P2_IRQP6_AFTER_CPUIF_ADDR "UNISPLIT_RPI4_P2_IRQP6_AFTER_CPUIF_ADDR\n"
++#define RPI4_P2_IRQP6_CPUIF_RC_PREFIX "UNISPLIT_RPI4_P2_IRQP6_CPUIF_RC=0x"
++#define RPI4_P2_IRQP6_CPUIF_BASE_PREFIX "UNISPLIT_RPI4_P2_IRQP6_CPUIF_BASE=0x"
++#define RPI4_P2_IRQP6_CPUIF_SIZE_PREFIX "UNISPLIT_RPI4_P2_IRQP6_CPUIF_SIZE=0x"
++#define RPI4_P2_IRQP6_BEFORE_PLAT_PROBE "UNISPLIT_RPI4_P2_IRQP6_BEFORE_PLAT_PROBE\n"
++#define RPI4_P2_IRQP6_AFTER_PLAT_PROBE "UNISPLIT_RPI4_P2_IRQP6_AFTER_PLAT_PROBE\n"
++#define RPI4_P2_IRQP6_PLAT_RC_PREFIX "UNISPLIT_RPI4_P2_IRQP6_PLAT_RC=0x"
++#define RPI4_P2_IRQP_FAIL_GICV2_NOTFOUND "UNISPLIT_RPI4_P2_IRQP_FAIL_GICV2_NOTFOUND\n"
++#define RPI4_P2_IRQP_FAIL_GICV2_DIST_ADDR "UNISPLIT_RPI4_P2_IRQP_FAIL_GICV2_DIST_ADDR\n"
++#define RPI4_P2_IRQP_FAIL_GICV2_CPUIF_ADDR "UNISPLIT_RPI4_P2_IRQP_FAIL_GICV2_CPUIF_ADDR\n"
++#define RPI4_P2_IRQP_FAIL_GICV2_PLAT_PROBE "UNISPLIT_RPI4_P2_IRQP_FAIL_GICV2_PLAT_PROBE\n"
++#define RPI4_P2_IRQP_FAIL_GICV2_DO_PROBE "UNISPLIT_RPI4_P2_IRQP_FAIL_GICV2_DO_PROBE\n"
++#define RPI4_P2_GP_FAIL_DO_PROBE_RC "UNISPLIT_RPI4_P2_GP_FAIL_DO_PROBE_RC\n"
++#define RPI4_P2_GP_FAIL_MAP_RC "UNISPLIT_RPI4_P2_GP_FAIL_MAP_RC\n"
++
++static inline __u16 rpi4_irqg_uart_read(__u64 offset)
++{
++	return *((volatile __u16 *)(RPI4_IRQG_UART_BASE + offset));
++}
++
++static inline void rpi4_irqg_uart_write(__u64 offset, __u16 value)
++{
++	*((volatile __u16 *)(RPI4_IRQG_UART_BASE + offset)) = value;
++}
++
++static void rpi4_irqg_uart_putc(char ch)
++{
++	while (rpi4_irqg_uart_read(RPI4_IRQG_UARTFR_OFFSET) & RPI4_IRQG_FR_TXFF)
++		;
++
++	rpi4_irqg_uart_write(RPI4_IRQG_UARTDR_OFFSET, (__u16)(ch & 0xff));
++}
++
++static void rpi4_irqg_uart_puts(const char *s)
++{
++	while (*s) {
++		if (*s == '\n')
++			rpi4_irqg_uart_putc('\r');
++		rpi4_irqg_uart_putc(*s++);
++	}
++}
++
++static void rpi4_irqg_uart_put_hex_nibble(__u8 nibble)
++{
++	static const char hex[] = "0123456789abcdef";
++
++	rpi4_irqg_uart_putc(hex[nibble & 0xf]);
++}
++
++static void rpi4_irqg_uart_put_hex32(__u32 value)
++{
++	int shift;
++
++	for (shift = 28; shift >= 0; shift -= 4)
++		rpi4_irqg_uart_put_hex_nibble((__u8)(value >> shift));
++}
++
++static void rpi4_irqg_uart_put_hex64(__u64 value)
++{
++	int shift;
++
++	for (shift = 60; shift >= 0; shift -= 4)
++		rpi4_irqg_uart_put_hex_nibble((__u8)(value >> shift));
++}
++#endif
++
+ /* Inline functions to access GICC & GICD registers */
+ static inline void write_gicd8(__u64 offset, __u8 val)
+ {
+@@ -505,21 +642,71 @@
+ 
+ static void gicv2_set_ops(void)
+ {
+-	struct _gic_operations drv_ops = {
+-		.initialize        = gicv2_initialize,
+-		.ack_irq           = gicv2_ack_irq,
+-		.eoi_irq           = gicv2_eoi_irq,
+-		.enable_irq        = gicv2_enable_irq,
+-		.disable_irq       = gicv2_disable_irq,
+-		.set_irq_trigger   = gicv2_set_irq_trigger,
+-		.set_irq_prio      = gicv2_set_irq_prio,
+-		.set_irq_affinity  = gicv2_set_irq_target,
+-		.handle_irq        = gicv2_handle_irq,
+-		.gic_sgi_gen       = gicv2_sgi_gen_to_cpu,
+-	};
+-
+-	/* Set driver functions */
+-	gicv2_drv.ops = drv_ops;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GS1_ENTRY);
++	rpi4_irqg_uart_puts(RPI4_P2_GS1_DST_PTR_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)(__uptr)&gicv2_drv.ops);
++	rpi4_irqg_uart_puts("\n");
++	rpi4_irqg_uart_puts(RPI4_P2_GS1_INIT_PTR_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)(__uptr)gicv2_initialize);
++	rpi4_irqg_uart_puts("\n");
++	rpi4_irqg_uart_puts(RPI4_P2_GS1_ACK_PTR_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)(__uptr)gicv2_ack_irq);
++	rpi4_irqg_uart_puts("\n");
++	rpi4_irqg_uart_puts(RPI4_P2_GS1_HANDLE_PTR_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)(__uptr)gicv2_handle_irq);
++	rpi4_irqg_uart_puts("\n");
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_BEFORE_ASSIGN_INITIALIZE);
++#endif
++	gicv2_drv.ops.initialize = gicv2_initialize;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_AFTER_ASSIGN_INITIALIZE);
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_BEFORE_ASSIGN_ACK_IRQ);
++#endif
++	gicv2_drv.ops.ack_irq = gicv2_ack_irq;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_AFTER_ASSIGN_ACK_IRQ);
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_BEFORE_ASSIGN_EOI_IRQ);
++#endif
++	gicv2_drv.ops.eoi_irq = gicv2_eoi_irq;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_AFTER_ASSIGN_EOI_IRQ);
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_BEFORE_ASSIGN_ENABLE_IRQ);
++#endif
++	gicv2_drv.ops.enable_irq = gicv2_enable_irq;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_AFTER_ASSIGN_ENABLE_IRQ);
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_BEFORE_ASSIGN_DISABLE_IRQ);
++#endif
++	gicv2_drv.ops.disable_irq = gicv2_disable_irq;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_AFTER_ASSIGN_DISABLE_IRQ);
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_BEFORE_ASSIGN_SET_IRQ_TRIGGER);
++#endif
++	gicv2_drv.ops.set_irq_trigger = gicv2_set_irq_trigger;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_AFTER_ASSIGN_SET_IRQ_TRIGGER);
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_BEFORE_ASSIGN_SET_IRQ_PRIO);
++#endif
++	gicv2_drv.ops.set_irq_prio = gicv2_set_irq_prio;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_AFTER_ASSIGN_SET_IRQ_PRIO);
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_BEFORE_ASSIGN_SET_IRQ_AFFINITY);
++#endif
++	gicv2_drv.ops.set_irq_affinity = gicv2_set_irq_target;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_AFTER_ASSIGN_SET_IRQ_AFFINITY);
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_BEFORE_ASSIGN_HANDLE_IRQ);
++#endif
++	gicv2_drv.ops.handle_irq = gicv2_handle_irq;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_AFTER_ASSIGN_HANDLE_IRQ);
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_BEFORE_ASSIGN_GIC_SGI_GEN);
++#endif
++	gicv2_drv.ops.gic_sgi_gen = gicv2_sgi_gen_to_cpu;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GS2_AFTER_ASSIGN_GIC_SGI_GEN);
++#endif
+ }
+ 
+ #if defined(CONFIG_UKPLAT_ACPI)
+@@ -580,30 +767,95 @@
+ 	int fdt_gic, r;
+ 	void *fdt;
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_DO_PROBE_ENTRY);
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_BI_PTR_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)(__uptr)bi);
++	rpi4_irqg_uart_puts("\n");
++#endif
+ 	UK_ASSERT(bi);
+ 	fdt = (void *)bi->dtb;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_DTB_PTR_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)(__uptr)fdt);
++	rpi4_irqg_uart_puts("\n");
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_BEFORE_FIND_NODE);
++#endif
+ 
+ 	/* Currently, we only support 1 GIC per system */
+ 	fdt_gic = fdt_node_offset_by_compatible_list(fdt, -1, gic_device_list);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_AFTER_FIND_NODE);
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_NODE_PREFIX);
++	rpi4_irqg_uart_put_hex32((__u32)fdt_gic);
++	rpi4_irqg_uart_puts("\n");
++	if (fdt_gic < 0)
++		rpi4_irqg_uart_puts(RPI4_P2_IRQP_FAIL_GICV2_NOTFOUND);
++#endif
+ 	if (fdt_gic < 0)
+ 		return -FDT_ERR_NOTFOUND; /* GICv2 not present */
+ 
+ 	/* Get address and size of the GIC's register regions */
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_BEFORE_DIST_ADDR);
++#endif
+ 	r = fdt_get_address(fdt, fdt_gic, 0, &gicv2_drv.dist_mem_addr,
+ 			    &gicv2_drv.dist_mem_size);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_AFTER_DIST_ADDR);
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_DIST_RC_PREFIX);
++	rpi4_irqg_uart_put_hex32((__u32)r);
++	rpi4_irqg_uart_puts("\n");
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_DIST_BASE_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)gicv2_drv.dist_mem_addr);
++	rpi4_irqg_uart_puts("\n");
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_DIST_SIZE_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)gicv2_drv.dist_mem_size);
++	rpi4_irqg_uart_puts("\n");
++	if (unlikely(r < 0))
++		rpi4_irqg_uart_puts(RPI4_P2_IRQP_FAIL_GICV2_DIST_ADDR);
++#endif
+ 	if (unlikely(r < 0)) {
+ 		uk_pr_err("Could not find GICv2 distributor region!\n");
+ 		return r;
+ 	}
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_BEFORE_CPUIF_ADDR);
++#endif
+ 	r = fdt_get_address(fdt, fdt_gic, 1, &gicv2_drv.cpuif_mem_addr,
+ 			    &gicv2_drv.cpuif_mem_size);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_AFTER_CPUIF_ADDR);
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_CPUIF_RC_PREFIX);
++	rpi4_irqg_uart_put_hex32((__u32)r);
++	rpi4_irqg_uart_puts("\n");
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_CPUIF_BASE_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)gicv2_drv.cpuif_mem_addr);
++	rpi4_irqg_uart_puts("\n");
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_CPUIF_SIZE_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)gicv2_drv.cpuif_mem_size);
++	rpi4_irqg_uart_puts("\n");
++	if (unlikely(r < 0))
++		rpi4_irqg_uart_puts(RPI4_P2_IRQP_FAIL_GICV2_CPUIF_ADDR);
++#endif
+ 	if (unlikely(r < 0)) {
+ 		uk_pr_err("Could not find GICv2 cpuif region!\n");
+ 		return r;
+ 	}
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_BEFORE_PLAT_PROBE);
++#endif
+ 	r = uk_intctlr_plat_probe(&gicv2_drv);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_AFTER_PLAT_PROBE);
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP6_PLAT_RC_PREFIX);
++	rpi4_irqg_uart_put_hex32((__u32)r);
++	rpi4_irqg_uart_puts("\n");
++	if (unlikely(r))
++		rpi4_irqg_uart_puts(RPI4_P2_IRQP_FAIL_GICV2_PLAT_PROBE);
++#endif
+ 	if (unlikely(r)) {
+ 		uk_pr_err("GICv2 platform probe failed\n");
+ 		return r;
+@@ -652,6 +904,9 @@
+ {
+ 	int rc;
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP5_GICV2_PROBE_ENTRY);
++#endif
+ #ifdef CONFIG_HAVE_SMP
+ 	if (gicv2_drv.is_probed) {
+ 		/* GIC is already probed, we don't need to probe again */
+@@ -667,32 +922,110 @@
+ 
+ 	gicv2_drv.is_probed = 1;
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP5_BEFORE_DO_PROBE);
++#endif
+ 	rc = gicv2_do_probe();
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP5_AFTER_DO_PROBE);
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP5_DO_PROBE_RC_PREFIX);
++	rpi4_irqg_uart_put_hex32((__u32)rc);
++	rpi4_irqg_uart_puts("\n");
++	if (unlikely(rc))
++		rpi4_irqg_uart_puts(RPI4_P2_IRQP_FAIL_GICV2_DO_PROBE);
++#endif
+ 	if (rc) {
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_irqg_uart_puts(RPI4_P2_GP_FAIL_DO_PROBE_RC);
++#endif
+ 		*dev = NULL;
+ 		return rc;
+ 	}
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GP0_AFTER_RC_CHECK);
++	rpi4_irqg_uart_puts(RPI4_P2_GP0_GIC_PTR_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)(__uptr)&gicv2_drv);
++	rpi4_irqg_uart_puts("\n");
++#endif
++
+ #if CONFIG_PAGING
+ 	rc = gicv2_map();
+ 	if (unlikely(rc)) {
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_irqg_uart_puts(RPI4_P2_GP_FAIL_MAP_RC);
++#endif
+ 		uk_pr_err("Could not map device (%d)\n", rc);
+ 		return rc;
+ 	}
+ #endif /* CONFIG_PAGING */
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GP0_BEFORE_LOG_FOUND);
++#endif
+ 	uk_pr_info("Found GICv2 on:\n");
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GP0_AFTER_LOG_FOUND);
++	rpi4_irqg_uart_puts(RPI4_P2_GP0_BEFORE_LOG_DIST);
++#endif
+ 	uk_pr_info("\tDistributor  : 0x%lx - 0x%lx\n",
+ 		   gicv2_drv.dist_mem_addr,
+ 		   gicv2_drv.dist_mem_addr + gicv2_drv.dist_mem_size - 1);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GP0_AFTER_LOG_DIST);
++	rpi4_irqg_uart_puts(RPI4_P2_GP0_BEFORE_LOG_CPUIF);
++#endif
+ 	uk_pr_info("\tCPU interface: 0x%lx - 0x%lx\n",
+ 		   gicv2_drv.cpuif_mem_addr,
+ 		   gicv2_drv.cpuif_mem_addr + gicv2_drv.cpuif_mem_size - 1);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GP0_AFTER_LOG_CPUIF);
++	rpi4_irqg_uart_puts(RPI4_P2_GP1_BEFORE_SET_PRESENT);
++#endif
+ 
+ 	/* GICv2 is present */
+ 	gicv2_drv.is_present = 1;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GP1_AFTER_SET_PRESENT);
++	rpi4_irqg_uart_puts(RPI4_P2_GP1_BEFORE_SET_OPS);
++#endif
+ 	gicv2_set_ops();
+-
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GP1_AFTER_SET_OPS);
++	rpi4_irqg_uart_puts(RPI4_P2_GP1_OPS_PTR_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)(__uptr)gicv2_drv.ops.initialize);
++	rpi4_irqg_uart_puts("\n");
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP5_DIST_BASE_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)gicv2_drv.dist_mem_addr);
++	rpi4_irqg_uart_puts("\n");
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP5_DIST_SIZE_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)gicv2_drv.dist_mem_size);
++	rpi4_irqg_uart_puts("\n");
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP5_CPUIF_BASE_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)gicv2_drv.cpuif_mem_addr);
++	rpi4_irqg_uart_puts("\n");
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP5_CPUIF_SIZE_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)gicv2_drv.cpuif_mem_size);
++	rpi4_irqg_uart_puts("\n");
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP5_AFTER_SET_OPS);
++#endif
++
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GP2_BEFORE_SET_DEVPTR);
++	rpi4_irqg_uart_puts(RPI4_P2_GP2_DEVPTR_SLOT_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)(__uptr)dev);
++	rpi4_irqg_uart_puts("\n");
++#endif
+ 	*dev = &gicv2_drv;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_irqg_uart_puts(RPI4_P2_GP2_AFTER_SET_DEVPTR);
++	rpi4_irqg_uart_puts(RPI4_P2_IRQP5_DEV_PTR_PREFIX);
++	rpi4_irqg_uart_put_hex64((__u64)(__uptr)*dev);
++	rpi4_irqg_uart_puts("\n");
++	rpi4_irqg_uart_puts(RPI4_P2_GP3_BEFORE_RETURN);
++	rpi4_irqg_uart_puts(RPI4_P2_GP3_RETURN_RC_PREFIX);
++	rpi4_irqg_uart_put_hex32(0);
++	rpi4_irqg_uart_puts("\n");
++#endif
+ 	return 0;
+ }
+--- a/lib/ukallocbbuddy/bbuddy.c
++++ b/lib/ukallocbbuddy/bbuddy.c
+@@ -55,7 +55,7 @@
+ #include <uk/list.h>
+ #include <uk/page.h>
+ 
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ #define RPI4_BBUDDY_UART_BASE 0xFE201000UL
+ #define RPI4_BBUDDY_UARTDR_OFFSET 0x00UL
+ #define RPI4_BBUDDY_UARTFR_OFFSET 0x18UL
+@@ -82,6 +82,43 @@
+ #define RPI4_P2_HB2_MAX_PREFIX "UNISPLIT_RPI4_P2_HB2_MAX=0x"
+ #define RPI4_P2_HB2_RANGE_PREFIX "UNISPLIT_RPI4_P2_HB2_RANGE=0x"
+ #define RPI4_P2_HB2_RC_PREFIX "UNISPLIT_RPI4_P2_HB2_RC=0x"
++#define RPI4_P2_BA1_ENTRY "UNISPLIT_RPI4_P2_BA1_ENTRY\n"
++#define RPI4_P2_BA1_ALLOC_PTR_PREFIX "UNISPLIT_RPI4_P2_BA1_ALLOC_PTR=0x"
++#define RPI4_P2_BA2_BEFORE_ALIGN "UNISPLIT_RPI4_P2_BA2_BEFORE_ALIGN\n"
++#define RPI4_P2_BA2_AFTER_ALIGN "UNISPLIT_RPI4_P2_BA2_AFTER_ALIGN\n"
++#define RPI4_P2_BA2_ALIGNED_MIN_PREFIX "UNISPLIT_RPI4_P2_BA2_ALIGNED_MIN=0x"
++#define RPI4_P2_BA2_ALIGNED_MAX_PREFIX "UNISPLIT_RPI4_P2_BA2_ALIGNED_MAX=0x"
++#define RPI4_P2_BA2_ALIGNED_RANGE_PREFIX "UNISPLIT_RPI4_P2_BA2_ALIGNED_RANGE=0x"
++#define RPI4_P2_BA3_BEFORE_RANGE_CHECK "UNISPLIT_RPI4_P2_BA3_BEFORE_RANGE_CHECK\n"
++#define RPI4_P2_BA3_AFTER_RANGE_CHECK "UNISPLIT_RPI4_P2_BA3_AFTER_RANGE_CHECK\n"
++#define RPI4_P2_BA3_BEFORE_MEMR_LAYOUT "UNISPLIT_RPI4_P2_BA3_BEFORE_MEMR_LAYOUT\n"
++#define RPI4_P2_BA3_AFTER_MEMR_LAYOUT "UNISPLIT_RPI4_P2_BA3_AFTER_MEMR_LAYOUT\n"
++#define RPI4_P2_BA3_MEMR_PTR_PREFIX "UNISPLIT_RPI4_P2_BA3_MEMR_PTR=0x"
++#define RPI4_P2_BA3_BITMAP_PTR_PREFIX "UNISPLIT_RPI4_P2_BA3_BITMAP_PTR=0x"
++#define RPI4_P2_BA3_MEMR_SIZE_PREFIX "UNISPLIT_RPI4_P2_BA3_MEMR_SIZE=0x"
++#define RPI4_P2_BA3_NR_PAGES_PREFIX "UNISPLIT_RPI4_P2_BA3_NR_PAGES=0x"
++#define RPI4_P2_BA3_USABLE_MIN_PREFIX "UNISPLIT_RPI4_P2_BA3_USABLE_MIN=0x"
++#define RPI4_P2_BA3_USABLE_RANGE_PREFIX "UNISPLIT_RPI4_P2_BA3_USABLE_RANGE=0x"
++#define RPI4_P2_BA4_BEFORE_LIST_INSERT "UNISPLIT_RPI4_P2_BA4_BEFORE_LIST_INSERT\n"
++#define RPI4_P2_BA4_AFTER_LIST_INSERT "UNISPLIT_RPI4_P2_BA4_AFTER_LIST_INSERT\n"
++#define RPI4_P2_BA4_FIRST_PAGE_PREFIX "UNISPLIT_RPI4_P2_BA4_FIRST_PAGE=0x"
++#define RPI4_P2_BA5_BEFORE_BITMAP_MEMSET "UNISPLIT_RPI4_P2_BA5_BEFORE_BITMAP_MEMSET\n"
++#define RPI4_P2_BA5_AFTER_BITMAP_MEMSET "UNISPLIT_RPI4_P2_BA5_AFTER_BITMAP_MEMSET\n"
++#define RPI4_P2_BA5_BITMAP_SIZE_PREFIX "UNISPLIT_RPI4_P2_BA5_BITMAP_SIZE=0x"
++#define RPI4_P2_BA6_BEFORE_MAP_FREE "UNISPLIT_RPI4_P2_BA6_BEFORE_MAP_FREE\n"
++#define RPI4_P2_BA6_AFTER_MAP_FREE "UNISPLIT_RPI4_P2_BA6_AFTER_MAP_FREE\n"
++#define RPI4_P2_BA6_FREE_BASE_PREFIX "UNISPLIT_RPI4_P2_BA6_FREE_BASE=0x"
++#define RPI4_P2_BA6_FREE_PAGES_PREFIX "UNISPLIT_RPI4_P2_BA6_FREE_PAGES=0x"
++#define RPI4_P2_BA7_BEFORE_FIRST_ORDER "UNISPLIT_RPI4_P2_BA7_BEFORE_FIRST_ORDER\n"
++#define RPI4_P2_BA7_AFTER_FIRST_ORDER "UNISPLIT_RPI4_P2_BA7_AFTER_FIRST_ORDER\n"
++#define RPI4_P2_BA7_ORDER_PREFIX "UNISPLIT_RPI4_P2_BA7_ORDER=0x"
++#define RPI4_P2_BA7_CHUNK_PTR_PREFIX "UNISPLIT_RPI4_P2_BA7_CHUNK_PTR=0x"
++#define RPI4_P2_BA7_HEAD_PTR_PREFIX "UNISPLIT_RPI4_P2_BA7_HEAD_PTR=0x"
++#define RPI4_P2_BA8_BEFORE_FIRST_INSERT "UNISPLIT_RPI4_P2_BA8_BEFORE_FIRST_INSERT\n"
++#define RPI4_P2_BA8_AFTER_FIRST_INSERT "UNISPLIT_RPI4_P2_BA8_AFTER_FIRST_INSERT\n"
++#define RPI4_P2_BA9_BEFORE_RETURN "UNISPLIT_RPI4_P2_BA9_BEFORE_RETURN\n"
++#define RPI4_P2_BA9_RC_PREFIX "UNISPLIT_RPI4_P2_BA9_RC=0x"
++#define RPI4_P2_BA_FAIL_INVALID_RANGE "UNISPLIT_RPI4_P2_BA_FAIL_INVALID_RANGE\n"
+ #define RPI4_P2_H_FAIL_BBUDDY_BASE_ZERO "UNISPLIT_RPI4_P2_H_FAIL_BBUDDY_BASE_ZERO\n"
+ #define RPI4_P2_H_FAIL_BBUDDY_MAX_LE_MIN "UNISPLIT_RPI4_P2_H_FAIL_BBUDDY_MAX_LE_MIN\n"
+ #define RPI4_P2_H_FAIL_BBUDDY_NOSPACE "UNISPLIT_RPI4_P2_H_FAIL_BBUDDY_NOSPACE\n"
+@@ -625,11 +662,17 @@
+ 	struct uk_bbpalloc *b;
+ 	struct uk_bbpalloc_memr *memr;
+ 	size_t memr_size;
++	size_t bitmap_i;
+ 	unsigned long i;
+ 	struct chunk_head *ch;
+ 	uintptr_t min, max, range;
++	int first_chunk = 1;
+ 
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA1_ENTRY);
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA1_ALLOC_PTR_PREFIX);
++	rpi4_bbuddy_uart_put_hex64((__u64)(__uptr)a);
++	rpi4_bbuddy_uart_puts("\n");
+ 	rpi4_bbuddy_uart_puts(RPI4_P2_HB2_ADDMEM_ENTRY);
+ 	if (unlikely(!a))
+ 		rpi4_bbuddy_uart_puts(RPI4_P2_H_FAIL_BBUDDY_ADDMEM_NULL_A);
+@@ -648,17 +691,30 @@
+ 
+ 	freelist_sanitycheck(b->free_head);
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA2_BEFORE_ALIGN);
++#endif
+ 	min = round_pgup((uintptr_t)base);
+ 	max = round_pgdown((uintptr_t)base + (uintptr_t)len);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
+-	rpi4_bbuddy_uart_puts(RPI4_P2_HB2_MIN_PREFIX);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA2_AFTER_ALIGN);
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA2_ALIGNED_MIN_PREFIX);
+ 	rpi4_bbuddy_uart_put_hex64((__u64)min);
+ 	rpi4_bbuddy_uart_puts("\n");
+-	rpi4_bbuddy_uart_puts(RPI4_P2_HB2_MAX_PREFIX);
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA2_ALIGNED_MAX_PREFIX);
+ 	rpi4_bbuddy_uart_put_hex64((__u64)max);
+ 	rpi4_bbuddy_uart_puts("\n");
++	rpi4_bbuddy_uart_puts(RPI4_P2_HB2_MIN_PREFIX);
++	rpi4_bbuddy_uart_put_hex64((__u64)min);
++	rpi4_bbuddy_uart_puts("\n");
++	rpi4_bbuddy_uart_puts(RPI4_P2_HB2_MAX_PREFIX);
++		rpi4_bbuddy_uart_put_hex64((__u64)max);
++		rpi4_bbuddy_uart_puts("\n");
+ #endif
+ 	if (max < min) {
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		rpi4_bbuddy_uart_puts(RPI4_P2_BA_FAIL_INVALID_RANGE);
++#endif
+ 		uk_pr_err("%"__PRIuptr": Failed to add memory region %"__PRIuptr"-%"__PRIuptr": Invalid range after applying page alignments\n",
+ 			  (uintptr_t) a, (uintptr_t) base,
+ 			  (uintptr_t) base + (uintptr_t) len);
+@@ -666,10 +722,14 @@
+ 	}
+ 
+ 	range = max - min;
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA2_ALIGNED_RANGE_PREFIX);
++	rpi4_bbuddy_uart_put_hex64((__u64)range);
++	rpi4_bbuddy_uart_puts("\n");
+ 	rpi4_bbuddy_uart_puts(RPI4_P2_HB2_RANGE_PREFIX);
+ 	rpi4_bbuddy_uart_put_hex64((__u64)range);
+ 	rpi4_bbuddy_uart_puts("\n");
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA3_BEFORE_RANGE_CHECK);
+ #endif
+ 
+ 	/* We should have at least one page for bitmap tracking
+@@ -677,7 +737,7 @@
+ 	 */
+ 	if (range < round_pgup(sizeof(*memr) + BYTES_PER_MAPWORD) +
+ 			__PAGE_SIZE) {
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 		rpi4_bbuddy_uart_puts(RPI4_P2_H_FAIL_BBUDDY_ADDMEM_RANGE_SMALL);
+ #endif
+ 		uk_pr_err("%"__PRIuptr": Failed to add memory region %"__PRIuptr"-%"__PRIuptr": Not enough space after applying page alignments\n",
+@@ -685,6 +745,10 @@
+ 			  (uintptr_t) base + (uintptr_t) len);
+ 		return -EINVAL;
+ 	}
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA3_AFTER_RANGE_CHECK);
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA3_BEFORE_MEMR_LAYOUT);
++#endif
+ 
+ 	memr = (struct uk_bbpalloc_memr *)min;
+ 
+@@ -705,6 +769,28 @@
+ 	min += memr_size;
+ 	range -= memr_size;
+ 	memr->nr_pages -= memr_size >> __PAGE_SHIFT;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA3_AFTER_MEMR_LAYOUT);
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA3_MEMR_PTR_PREFIX);
++	rpi4_bbuddy_uart_put_hex64((__u64)(__uptr)memr);
++	rpi4_bbuddy_uart_puts("\n");
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA3_BITMAP_PTR_PREFIX);
++	rpi4_bbuddy_uart_put_hex64((__u64)(__uptr)memr->mm_alloc_bitmap);
++	rpi4_bbuddy_uart_puts("\n");
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA3_MEMR_SIZE_PREFIX);
++	rpi4_bbuddy_uart_put_hex64((__u64)memr_size);
++	rpi4_bbuddy_uart_puts("\n");
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA3_NR_PAGES_PREFIX);
++	rpi4_bbuddy_uart_put_hex64((__u64)memr->nr_pages);
++	rpi4_bbuddy_uart_puts("\n");
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA3_USABLE_MIN_PREFIX);
++	rpi4_bbuddy_uart_put_hex64((__u64)min);
++	rpi4_bbuddy_uart_puts("\n");
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA3_USABLE_RANGE_PREFIX);
++	rpi4_bbuddy_uart_put_hex64((__u64)range);
++	rpi4_bbuddy_uart_puts("\n");
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA4_BEFORE_LIST_INSERT);
++#endif
+ 
+ 	/*
+ 	 * Initialize region's bitmap
+@@ -713,37 +799,96 @@
+ 	/* add to list */
+ 	memr->next = b->memr_head;
+ 	b->memr_head = memr;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA4_AFTER_LIST_INSERT);
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA4_FIRST_PAGE_PREFIX);
++	rpi4_bbuddy_uart_put_hex64((__u64)memr->first_page);
++	rpi4_bbuddy_uart_puts("\n");
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA5_BEFORE_BITMAP_MEMSET);
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA5_BITMAP_SIZE_PREFIX);
++	rpi4_bbuddy_uart_put_hex64((__u64)memr->mm_alloc_bitmap_size);
++	rpi4_bbuddy_uart_puts("\n");
++#endif
+ 
+ 	/* All allocated by default. */
+-	memset(memr->mm_alloc_bitmap, (unsigned char) ~0,
+-			memr->mm_alloc_bitmap_size);
++	for (bitmap_i = 0; bitmap_i < memr->mm_alloc_bitmap_size; ++bitmap_i)
++		((unsigned char *)memr->mm_alloc_bitmap)[bitmap_i] =
++			(unsigned char)~0;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA5_AFTER_BITMAP_MEMSET);
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA6_BEFORE_MAP_FREE);
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA6_FREE_BASE_PREFIX);
++	rpi4_bbuddy_uart_put_hex64((__u64)min);
++	rpi4_bbuddy_uart_puts("\n");
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA6_FREE_PAGES_PREFIX);
++	rpi4_bbuddy_uart_put_hex64((__u64)memr->nr_pages);
++	rpi4_bbuddy_uart_puts("\n");
++#endif
+ 
+ 	/* free up the memory we've been given to play with */
+ 	map_free(b, min, memr->nr_pages);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA6_AFTER_MAP_FREE);
++#endif
+ 
+ 	while (range != 0) {
+ 		/*
+ 		 * Next chunk is limited by alignment of min, but also
+ 		 * must not be bigger than remaining range.
+ 		 */
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		if (first_chunk)
++			rpi4_bbuddy_uart_puts(RPI4_P2_BA7_BEFORE_FIRST_ORDER);
++#endif
+ 		for (i = __PAGE_SHIFT; (1UL << (i + 1)) <= range; i++)
+ 			if (min & (1UL << i))
+ 				break;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		if (first_chunk) {
++			rpi4_bbuddy_uart_puts(RPI4_P2_BA7_AFTER_FIRST_ORDER);
++			rpi4_bbuddy_uart_puts(RPI4_P2_BA7_ORDER_PREFIX);
++			rpi4_bbuddy_uart_put_hex64((__u64)(i - __PAGE_SHIFT));
++			rpi4_bbuddy_uart_puts("\n");
++		}
++#endif
+ 
+ 		uk_pr_debug("%"__PRIuptr": Add allocate unit %"__PRIuptr" - %"__PRIuptr" (order %lu)\n",
+ 			    (uintptr_t)a, min, (uintptr_t)(min + (1UL << i)),
+ 			    (i - __PAGE_SHIFT));
+ 
+ 		ch = (struct chunk_head *)min;
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		if (first_chunk) {
++			rpi4_bbuddy_uart_puts(RPI4_P2_BA7_CHUNK_PTR_PREFIX);
++			rpi4_bbuddy_uart_put_hex64((__u64)(__uptr)ch);
++			rpi4_bbuddy_uart_puts("\n");
++			rpi4_bbuddy_uart_puts(RPI4_P2_BA7_HEAD_PTR_PREFIX);
++			rpi4_bbuddy_uart_put_hex64((__u64)(__uptr)&b->free_head[i - __PAGE_SHIFT]);
++			rpi4_bbuddy_uart_puts("\n");
++			rpi4_bbuddy_uart_puts(RPI4_P2_BA8_BEFORE_FIRST_INSERT);
++		}
++#endif
+ 		min += 1UL << i;
+ 		range -= 1UL << i;
+ 		i -= __PAGE_SHIFT;
+ 		ch->page_order = i;
+ 		uk_hlist_add_head(&ch->link, &b->free_head[i]);
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++		if (first_chunk) {
++			rpi4_bbuddy_uart_puts(RPI4_P2_BA8_AFTER_FIRST_INSERT);
++			first_chunk = 0;
++		}
++#endif
+ 	}
+ 
+ 	freelist_sanitycheck(b->free_head);
+ 
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA9_BEFORE_RETURN);
++	rpi4_bbuddy_uart_puts(RPI4_P2_BA9_RC_PREFIX);
++	rpi4_bbuddy_uart_put_hex32(0);
++	rpi4_bbuddy_uart_puts("\n");
++#endif
+ 	return 0;
+ }
+ 
+@@ -755,7 +900,7 @@
+ 	uintptr_t min, max;
+ 	unsigned long i;
+ 
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_bbuddy_uart_puts(RPI4_P2_HB1_BBUDDY_ENTRY);
+ 	if ((uintptr_t)base == 0)
+ 		rpi4_bbuddy_uart_puts(RPI4_P2_H_FAIL_BBUDDY_BASE_ZERO);
+@@ -768,7 +913,7 @@
+ #endif
+ 	min = round_pgup((uintptr_t)base);
+ 	max = round_pgdown((uintptr_t)base + (uintptr_t)len);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_bbuddy_uart_puts(RPI4_P2_HB1_MIN_PREFIX);
+ 	rpi4_bbuddy_uart_put_hex64((__u64)min);
+ 	rpi4_bbuddy_uart_puts("\n");
+@@ -782,7 +927,7 @@
+ 
+ 	/* Allocate space for allocator descriptor */
+ 	metalen = round_pgup(sizeof(*a) + sizeof(*b));
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_bbuddy_uart_puts(RPI4_P2_HB1_METALEN_PREFIX);
+ 	rpi4_bbuddy_uart_put_hex64((__u64)metalen);
+ 	rpi4_bbuddy_uart_puts("\n");
+@@ -791,19 +936,19 @@
+ 
+ 	/* enough space for allocator available? */
+ 	if (min + metalen > max) {
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 		rpi4_bbuddy_uart_puts(RPI4_P2_H_FAIL_BBUDDY_NOSPACE);
+ #endif
+ 		uk_pr_err("Not enough space for allocator: %"__PRIsz" B required but only %"__PRIuptr" B usable\n",
+ 			  metalen, (max - min));
+ 		return NULL;
+ 	}
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_bbuddy_uart_puts(RPI4_P2_HB1_AFTER_SPACE_CHECK);
+ #endif
+ 
+ 	a = (struct uk_alloc *)min;
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_bbuddy_uart_puts(RPI4_P2_HB1_ALLOC_DESC_PREFIX);
+ 	rpi4_bbuddy_uart_put_hex64((__u64)(uintptr_t)a);
+ 	rpi4_bbuddy_uart_puts("\n");
+@@ -813,7 +958,7 @@
+ 		   (uintptr_t)a);
+ 	min += metalen;
+ 	memset(a, 0, metalen);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_bbuddy_uart_puts(RPI4_P2_HB1_AFTER_MEMSET);
+ #endif
+ 	b = (struct uk_bbpalloc *)&a->priv;
+@@ -823,18 +968,18 @@
+ 	b->memr_head = NULL;
+ 
+ 	/* initialize and register allocator interface */
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_bbuddy_uart_puts(RPI4_P2_HB1_BEFORE_INIT_IFACE);
+ #endif
+ 	uk_alloc_init_palloc(a, bbuddy_palloc, bbuddy_pfree,
+ 			     bbuddy_pmaxalloc, bbuddy_pavailmem,
+ 			     bbuddy_addmem);
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	rpi4_bbuddy_uart_puts(RPI4_P2_HB1_AFTER_INIT_IFACE);
+ #endif
+ 
+ 	if (max > min)
+-#if CONFIG_KVM_VMM_RPI4 && CONFIG_APPPI4PHASE2_BOOTRESTORE
++#if CONFIG_KVM_VMM_RPI4 && (CONFIG_APPPI4PHASE2_BOOTRESTORE || CONFIG_APPPI4PHASE3_SELFTEST)
+ 	{
+ 		int addmem_rc;
+ 

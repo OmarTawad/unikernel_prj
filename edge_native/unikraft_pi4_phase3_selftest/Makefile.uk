@@ -1,0 +1,8 @@
+$(eval $(call addlib,apppi4phase3))
+
+CINCLUDES-y += -I$(APPPI4PHASE3_BASE)/../runtime/include
+CINCLUDES-y += -I$(APPPI4PHASE3_BASE)/../unikraft_edge_selftest/generated
+
+APPPI4PHASE3_SRCS-y += $(APPPI4PHASE3_BASE)/main.c
+APPPI4PHASE3_SRCS-y += $(APPPI4PHASE3_BASE)/../unikraft_edge_selftest/edge_model_minimal.c
+APPPI4PHASE3_SRCS-y += $(APPPI4PHASE3_BASE)/../unikraft_edge_selftest/generated/embedded_model.c

@@ -13,6 +13,7 @@ PYTEST := $(VENV)/bin/pytest
 .PHONY: prepi-validate pi-readiness-manifest pi-readiness-check pi-boot-payload pi-image-build pi-boot-media
 .PHONY: pi4-phase1-audit pi4-phase1-build pi4-phase1-stage pi4-phase1-handoff
 .PHONY: pi4-phase2-audit pi4-phase2-build pi4-phase2-stage pi4-phase2-handoff
+.PHONY: pi4-phase3-audit pi4-phase3-build pi4-phase3-stage pi4-phase3-handoff
 .PHONY: pi-uefi-check pi-uefi-stage pi-uefi-build pi-uefi-model-gate pi-uefi-discover-nonkvm pi-uefi-branchb-diagnose pi-uefi-boot-media pi-uefi-handoff
 
 help: ## Show this help
@@ -207,6 +208,19 @@ pi4-phase2-stage: ## Assemble direct-boot Pi4 phase-2 SD-card tree from a pinned
 pi4-phase2-handoff: ## One-shot Pi4 phase-2 build plus SD-card staging
 	$(MAKE) pi4-phase2-build
 	$(MAKE) pi4-phase2-stage
+
+pi4-phase3-audit: ## Audit the frozen-source Pi4 phase-3 selftest lane
+	bash scripts/build_pi4_phase3.sh --audit-only
+
+pi4-phase3-build: ## Build direct-boot Pi4 phase-3 image from the frozen phase-2 source snapshot
+	bash scripts/build_pi4_phase3.sh
+
+pi4-phase3-stage: ## Assemble direct-boot Pi4 phase-3 SD-card tree from a pinned firmware bundle
+	bash scripts/stage_pi4_phase3_sdcard.sh
+
+pi4-phase3-handoff: ## One-shot Pi4 phase-3 build plus SD-card staging
+	$(MAKE) pi4-phase3-build
+	$(MAKE) pi4-phase3-stage
 
 pi-uefi-check: ## Check tooling + repo inputs for Pi4 UEFI handoff flow
 	@command -v kraft >/dev/null || (echo "Missing kraft" && exit 1)
